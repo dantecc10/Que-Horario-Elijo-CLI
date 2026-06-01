@@ -2,7 +2,8 @@ credentials.json
 token.json
 *.pdf
 __pycache__
-
+.venv
+*/__pycache__/*
 *.xlsx
 !SchoolSubjectList/LEL.xlsx
 !SchoolSubjectList/ListExample.xlsx

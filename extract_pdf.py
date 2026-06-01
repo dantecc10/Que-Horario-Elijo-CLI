@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import os
 
+
 def limpiar_encabezados(texto):
     """
     Quita las primeras 3 líneas (encabezado general) y el encabezado de la tabla,
@@ -38,45 +39,67 @@ def parsear_linea_horario(linea_texto):
     # Expresión regular ajustada para ser más robusta.
     # Captura: NRC, Clave, Materia, Sección, Días, Hora, Profesor, Salón, Aclaraciones
     patron = re.compile(
-        r"(\d{5})\s+"                   # 1. NRC (5 dígitos exactos)
-        r"([A-Z\d]+\s+[A-Z\d]+)\s+"      # 2. Clave (ej. "ICCS 261")
-        r"(.+?)\s+"                     # 3. Nombre de la Materia (captura no-golosa)
-        r"([A-Z\d]{3})\s+"              # 4. Sección (3 caracteres, ej. "OO1")
-        r"([LMAJVSD]+)\s+"              # 5. Días de la semana
-        r"(\d{4}-\d{4})\s+"              # 6. Rango de hora (ej. "1100-1159")
-        # 7. Profesor (captura robusta de nombres en mayúsculas, con espacios y guiones)
-        #r"([A-ZÑÁÉÍÓÚ\s\-]+[A-ZÑÁÉÍÓÚ])\s+"
-        r"([A-ZÑÁÉÍÓÚ\s\-.]+)\s+"
-        r"(\S+)\s*"                     # 8. Salón (cualquier caracter que no sea espacio)
-        r"(.*)$"                        # 9. Aclaraciones (el resto de la línea)
+        r"(\d{5})\s+"                      # 1. NRC
+        r"([A-Za-z\d]+\s+[A-Za-z\d]+)\s+" # 2. Clave
+        r"(.+?)\s+"                         # 3. Materia
+        r"([A-Za-z\d]{2,4})\s+"            # 4. Sección (más flexible)
+        r"([LMAJVSD]+)\s+"                  # 5. Días
+        r"(\d{4}-\d{4})\s+"                # 6. Hora inicio-fin
+        r"([A-Za-zÑÁÉÍÓÚñáéíóú\s\-.]+?)\s+" # 7. Profesor
+        r"(\S+)\s*"                         # 8. Salón
+        r"(.*)$",                             # 9. Aclaraciones
+        re.IGNORECASE,
     )
-
-    # coincidencia = patron.search(linea_texto)
-    # if not coincidencia:
-    #     return None
 
     coincidencia = patron.search(linea_texto)
     if not coincidencia or len(coincidencia.groups()) < 9:
-        print("Línea no válida para el regex:", repr(linea_texto))  # Descomenta para depurar
         return None
 
     grupos = coincidencia.groups()
+    hora_inicio, hora_fin = grupos[5].split("-")
 
-    hora_inicio, hora_fin = grupos[5].split('-')
-
-    # Diccionario con los datos limpios y extraídos
-    datos = {
+    return {
         "NRC": grupos[0].strip(),
-        "Clave": f"{grupos[1].strip()}",
-        "Materia": f"{grupos[2].strip()}",
+        "Clave": grupos[1].strip(),
+        "Materia": grupos[2].strip(),
         "Profesor": grupos[6].strip(),
         "Hora de inicio": hora_inicio.strip(),
         "Hora de fin": hora_fin.strip(),
-        "Dia": grupos[4].strip(),
+        "Dia": grupos[4].strip().upper(),
         "Salon": grupos[7].strip(),
-        "Aclaraciones": grupos[8].strip()
+        "Aclaraciones": grupos[8].strip(),
     }
-    return datos
+
+
+
+def extraer_cursos_desde_pdf(pdf_path):
+    """
+    Extrae y devuelve una lista de cursos detectados en un PDF.
+
+    Retorna una lista de diccionarios con el mismo formato usado
+    en el flujo CLI. Si no se encuentran cursos, regresa lista vacia.
+    """
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"No se encontro el archivo: {pdf_path}")
+
+    cursos_encontrados = []
+    doc = pymupdf.open(pdf_path)
+    try:
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            texto_pagina = page.get_textpage().extractText()
+            text_pag_sin_encabeza = limpiar_encabezados(texto_pagina)
+            lineas_utiles = separar_lineas_por_nrc(text_pag_sin_encabeza)
+
+            for linea in lineas_utiles:
+                if re.match(r"^\d{5}", linea):
+                    datos_curso = parsear_linea_horario(linea)
+                    if datos_curso and datos_curso not in cursos_encontrados:
+                        cursos_encontrados.append(datos_curso)
+    finally:
+        doc.close()
+
+    return cursos_encontrados
 
 def extraer_pdf_a_excel(pdf_path, excel_path):
     """
@@ -86,35 +109,16 @@ def extraer_pdf_a_excel(pdf_path, excel_path):
         print(f"❌ Error: El archivo '{pdf_path}' no se encontró.")
         return False
 
-    cursos_encontrados = []
     try:
-        doc = pymupdf.open(pdf_path)
+        cursos_encontrados = extraer_cursos_desde_pdf(pdf_path)
     except Exception as e:
-        print(f"❌ Error al abrir el PDF: {e}")
+        print(f"❌ Error al abrir o procesar el PDF: {e}")
         return False
-
-    # Extraer texto de todas las páginas y aplicar las reglas de limpieza
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        texto_pagina = page.get_textpage().extractText()
-        text_pag_sin_encabeza = limpiar_encabezados(texto_pagina)
-        lineas_utiles = separar_lineas_por_nrc(text_pag_sin_encabeza)
-
-        # Procesar y parsear cada línea útil
-        for linea in lineas_utiles:
-            
-            # Solo procesar líneas que empiecen con un NRC
-            if re.match(r"^\d{5}", linea):
-                datos_curso = parsear_linea_horario(linea)
-                if datos_curso:
-                    if datos_curso not in cursos_encontrados:
-                        cursos_encontrados.append(datos_curso)
-    doc.close()
 
     if not cursos_encontrados:
         print("❌ No se encontraron cursos con el formato esperado en el PDF.")
         print("Verifica que el PDF no sea una imagen escaneada y que la estructura sea la correcta.")
-        return
+        return False
 
     print(f"\n✅ ¡Se encontraron {len(cursos_encontrados)} clases únicas en el PDF!")
 

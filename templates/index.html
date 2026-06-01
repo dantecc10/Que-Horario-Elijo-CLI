@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Que Horario Elijo - Web</title>
+		<link
+			rel="stylesheet"
+			href="{{ url_for('static', filename='style.css') }}" />
+	</head>
+	<body>
+		<main class="container">
+			<header class="hero">
+				<h1>Que Horario Elijo</h1>
+				<p>
+					Sube tu PDF, revisa materias y genera combinaciones de horario sin
+					choques.
+				</p>
+			</header>
+
+			{% with messages = get_flashed_messages(with_categories=true) %} {% if
+			messages %}
+			<section class="alerts">
+				{% for category, message in messages %}
+				<div class="alert {{ category }}">{{ message }}</div>
+				{% endfor %}
+			</section>
+			{% endif %} {% endwith %}
+
+			<section class="card">
+				<h2>1. Cargar PDF</h2>
+				<form
+					action="{{ url_for('upload_pdf') }}"
+					method="post"
+					enctype="multipart/form-data"
+					class="upload-form">
+					<input type="file" name="pdf" accept="application/pdf" required />
+					<button type="submit">Procesar PDF</button>
+				</form>
+				{% if pdf_name %}
+				<p class="meta">PDF actual: <strong>{{ pdf_name }}</strong></p>
+				{% endif %}
+			</section>
+
+			{% if materias_disponibles %}
+			<section class="card">
+				<h2>2. Seleccionar materias</h2>
+				<form action="{{ url_for('generate') }}" method="post">
+					<div class="subjects-grid">
+						{% for m in materias_disponibles %}
+						<label class="subject-item">
+							<input
+								type="checkbox"
+								name="materias"
+								value="{{ m.nombre }}"
+								{%
+								if
+								m.nombre
+								in
+								seleccionadas
+								%}checked{%
+								endif
+								%} />
+							<span class="subject-name">{{ m.nombre }}</span>
+							<span class="subject-meta"
+								>Opciones de NRC: {{ m.opciones }}</span
+							>
+						</label>
+						{% endfor %}
+					</div>
+					<button type="submit">Generar horarios</button>
+				</form>
+			</section>
+			{% endif %} {% if resultados %}
+			<section class="card">
+				<h2>3. Resultados</h2>
+				<p class="meta">
+					Mostrando {{ resultados|length }} de {{ resultados_totales }}
+					combinaciones.
+				</p>
+				{% if uso_subconjuntos %}
+				<p class="warning">
+					No se encontro horario con las {{ total_seleccionadas }} materias. Se
+					muestran alternativas con hasta {{ max_materias_logradas }} materias
+					sin choque.
+				</p>
+				{% endif %} {% if truncado %}
+				<p class="warning">
+					Se alcanzo el limite de generacion interno para evitar bloqueos.
+					Reduce materias para mas precision.
+				</p>
+				{% endif %} {% for r in resultados %}
+				<article class="result-card">
+					<h3>Horario #{{ r.id }}</h3>
+					<p>Materias: {{ r.materias|join(', ') }}</p>
+					<p>
+						Horas de clase: {{ '%.2f'|format(r.horas_clase) }} | Permanencia: {{
+						'%.2f'|format(r.horas_permanencia) }}
+					</p>
+
+					<table>
+						<thead>
+							<tr>
+								<th>Materia</th>
+								<th>NRC</th>
+								<th>Profesor</th>
+								<th>Dia</th>
+								<th>Inicio</th>
+								<th>Fin</th>
+								<th>Salon</th>
+							</tr>
+						</thead>
+						<tbody>
+							{% for idx in range(r.combinacion|length) %} {% set opcion =
+							r.combinacion[idx] %} {% set materia = r.materias[idx] %} {% for h
+							in opcion.horarios %}
+							<tr>
+								<td>{{ materia }}</td>
+								<td>{{ opcion.nrc }}</td>
+								<td>{{ opcion.profesor }}</td>
+								<td>{{ h.dia }}</td>
+								<td>{{ h.inicio.strftime('%H:%M') }}</td>
+								<td>{{ h.fin.strftime('%H:%M') }}</td>
+								<td>{{ h.salon }}</td>
+							</tr>
+							{% endfor %} {% endfor %}
+						</tbody>
+					</table>
+				</article>
+				{% endfor %} {% if resultados_totales > max_resultados_mostrados %}
+				<p class="warning">
+					Solo se muestran las primeras {{ max_resultados_mostrados }}
+					combinaciones para mantener la pagina ligera.
+				</p>
+				{% endif %}
+			</section>
+			{% endif %}
+		</main>
+	</body>
+</html>
+
