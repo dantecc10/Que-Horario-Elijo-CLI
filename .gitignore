@@ -7,3 +7,4 @@ __pycache__
 *.xlsx
 !SchoolSubjectList/LEL.xlsx
 !SchoolSubjectList/ListExample.xlsx
+run.sh

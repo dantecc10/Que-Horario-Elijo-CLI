@@ -508,4 +508,5 @@ def export_schedule_pdf(result_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    PORT = int(os.environ.get("FLASK_PORT", 5000))
+    app.run(debug=True, port=PORT)
