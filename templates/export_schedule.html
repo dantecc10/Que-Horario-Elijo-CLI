@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Horario #{{ r.id }}</title>
+		<link
+			rel="stylesheet"
+			href="{{ url_for('static', filename='style.css') }}" />
+	</head>
+	<body>
+		<main class="container export-sheet">
+			<header class="hero">
+				<h1>Que Horario Elijo</h1>
+				<p>Exportacion de horario en formato PDF</p>
+				<p class="meta">
+					Generado: {{ generated_at }} | Fuente: {{ pdf_name }}
+				</p>
+			</header>
+
+			{% if not has_weasyprint %}
+			<section class="card export-actions no-print">
+				<p class="warning">
+					El entorno no tiene generador PDF en servidor. Usa el boton de
+					imprimir y elige "Guardar como PDF".
+				</p>
+				<button type="button" onclick="window.print()">
+					Imprimir / Guardar como PDF
+				</button>
+			</section>
+			{% endif %}
+
+			<section class="card">
+				<h2>Horario #{{ r.id }}</h2>
+				<p>Materias: {{ r.materias|join(', ') }}</p>
+				<p>
+					Horas de clase: {{ '%.2f'|format(r.horas_clase) }} | Permanencia: {{
+					'%.2f'|format(r.horas_permanencia) }}
+				</p>
+			</section>
+
+			<section class="card">
+				<h2>Vista Semanal</h2>
+				<table class="weekly-table">
+					<thead>
+						<tr>
+							<th>Horario</th>
+							{% for d in r.vista_semanal.dias %}
+							<th>{{ r.vista_semanal.labels[d] }}</th>
+							{% endfor %}
+						</tr>
+					</thead>
+					<tbody>
+						{% for row in r.vista_semanal.rows %}
+						<tr>
+							<td class="slot-cell">{{ row.slot }}</td>
+							{% for d in r.vista_semanal.dias %}
+							<td>
+								{% for ev in row.cells[d] %}
+								<div class="event-chip">
+									<strong>{{ ev.materia }}</strong><br />
+									NRC {{ ev.nrc }}<br />
+									{{ ev.profesor }}<br />
+									Salon: {{ ev.salon }}
+								</div>
+								{% endfor %}
+							</td>
+							{% endfor %}
+						</tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</section>
+
+			<section class="card">
+				<h2>Tabla Detallada</h2>
+				<table>
+					<thead>
+						<tr>
+							<th>Materia</th>
+							<th>NRC</th>
+							<th>Profesor</th>
+							<th>Dia</th>
+							<th>Inicio</th>
+							<th>Fin</th>
+							<th>Salon</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for idx in range(r.combinacion|length) %} {% set opcion =
+						r.combinacion[idx] %} {% set materia = r.materias[idx] %} {% for h
+						in opcion.horarios %}
+						<tr>
+							<td>{{ materia }}</td>
+							<td>{{ opcion.nrc }}</td>
+							<td>{{ opcion.profesor }}</td>
+							<td>{{ h.dia }}</td>
+							<td>{{ h.inicio.strftime('%H:%M') }}</td>
+							<td>{{ h.fin.strftime('%H:%M') }}</td>
+							<td>{{ h.salon }}</td>
+						</tr>
+						{% endfor %} {% endfor %}
+					</tbody>
+				</table>
+			</section>
+		</main>
+	</body>
+</html>
+

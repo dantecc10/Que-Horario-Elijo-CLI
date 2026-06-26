@@ -1,17 +1,26 @@
+import json
 import os
 import uuid
 from datetime import datetime, time
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, make_response, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
-from extract_pdf import extraer_cursos_desde_pdf
+from extract_pdf import extraer_cursos_desde_archivo
+
+try:
+    from weasyprint import HTML
+
+    HAS_WEASYPRINT = True
+except Exception:
+    HAS_WEASYPRINT = False
 
 
 UPLOAD_FOLDER = "uploads"
-ALLOWED_EXTENSIONS = {"pdf"}
-MAX_RESULTADOS = 5000
-MAX_RESULTADOS_MOSTRADOS = 200
+ALLOWED_EXTENSIONS = {"pdf", "xlsx", "xls"}
+MAX_RESULTADOS = 50000
+DEFAULT_LIMITE_MOSTRAR = 1000
+MAX_LIMITE_MOSTRAR = 5000
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
@@ -119,6 +128,8 @@ def horarios_chocan(horarios):
 def calcular_horas(combinacion):
     por_dia = {}
     horas_clase = 0.0
+    hora_min = None
+    hora_max = None
     for opcion in combinacion:
         for h in opcion["horarios"]:
             inicio = h["inicio"]
@@ -128,6 +139,10 @@ def calcular_horas(combinacion):
                 continue
             horas_clase += horas_entre(inicio, fin)
             por_dia.setdefault(dia, []).append((inicio, fin))
+            if hora_min is None or inicio < hora_min:
+                hora_min = inicio
+            if hora_max is None or fin > hora_max:
+                hora_max = fin
 
     horas_permanencia = 0.0
     for bloques in por_dia.values():
@@ -136,10 +151,74 @@ def calcular_horas(combinacion):
         ultimo = max(b[1] for b in bloques)
         horas_permanencia += horas_entre(primero, ultimo)
 
-    return horas_clase, horas_permanencia
+    hora_min_str = hora_min.strftime("%H:%M") if hora_min else ""
+    hora_max_str = hora_max.strftime("%H:%M") if hora_max else ""
+
+    return horas_clase, horas_permanencia, hora_min_str, hora_max_str
 
 
-def generar_horarios(materias_seleccionadas):
+def construir_vista_semanal(resultado):
+    dias_orden = ["L", "M", "A", "J", "V", "S", "D"]
+    dias_label = {
+        "L": "Lunes",
+        "M": "Martes",
+        "A": "Miercoles",
+        "J": "Jueves",
+        "V": "Viernes",
+        "S": "Sabado",
+        "D": "Domingo",
+    }
+
+    eventos = []
+    marcas_tiempo = set()
+    for idx, opcion in enumerate(resultado["combinacion"]):
+        materia = resultado["materias"][idx]
+        for h in opcion["horarios"]:
+            inicio = h.get("inicio")
+            fin = h.get("fin")
+            dia = h.get("dia")
+            if not (isinstance(inicio, time) and isinstance(fin, time) and dia in dias_label):
+                continue
+            marcas_tiempo.add(inicio)
+            marcas_tiempo.add(fin)
+            eventos.append(
+                {
+                    "dia": dia,
+                    "inicio": inicio,
+                    "fin": fin,
+                    "materia": materia,
+                    "nrc": opcion.get("nrc", ""),
+                    "profesor": opcion.get("profesor", ""),
+                    "salon": h.get("salon", ""),
+                }
+            )
+
+    cortes = sorted(marcas_tiempo)
+    if len(cortes) < 2:
+        return {"dias": dias_orden, "labels": dias_label, "rows": []}
+
+    rows = []
+    for i in range(len(cortes) - 1):
+        ini = cortes[i]
+        fin = cortes[i + 1]
+        cells = {d: [] for d in dias_orden}
+
+        for ev in eventos:
+            if ev["inicio"] < fin and ev["fin"] > ini:
+                cells[ev["dia"]].append(ev)
+
+        if any(cells[d] for d in dias_orden):
+            rows.append(
+                {
+                    "slot": f"{ini.strftime('%H:%M')} - {fin.strftime('%H:%M')}",
+                    "cells": cells,
+                }
+            )
+
+    return {"dias": dias_orden, "labels": dias_label, "rows": rows}
+
+
+def generar_horarios(materias_seleccionadas, min_materias=3, max_materias=None):
     import itertools
 
     materia_keys = list(materias_seleccionadas.keys())
@@ -150,51 +229,77 @@ def generar_horarios(materias_seleccionadas):
     truncado = False
     uso_subconjuntos = False
 
-    def agregar_resultados_para_materias(keys):
-        nonlocal truncado
-        materia_opciones = [materias_seleccionadas[m] for m in keys]
-        for combinacion in itertools.product(*materia_opciones):
-            todos_horarios = []
-            for opcion in combinacion:
-                todos_horarios.extend(opcion["horarios"])
-            if horarios_chocan(todos_horarios):
-                continue
+    start = min(max_materias if max_materias is not None else len(materia_keys), len(materia_keys))
+    end = max(min_materias, 1)
 
-            horas_clase, horas_permanencia = calcular_horas(combinacion)
-            resultados.append(
+    for size in range(start, end - 1, -1):
+        for subset in itertools.combinations(materia_keys, size):
+            materia_opciones = [materias_seleccionadas[m] for m in subset]
+            for combinacion in itertools.product(*materia_opciones):
+                todos_horarios = []
+                for opcion in combinacion:
+                    todos_horarios.extend(opcion["horarios"])
+                if horarios_chocan(todos_horarios):
+                    continue
+
+                horas_clase, horas_permanencia, hora_min_inicio, hora_max_fin = calcular_horas(combinacion)
+                resultados.append(
+                    {
+                        "materias": list(subset),
+                        "combinacion": combinacion,
+                        "horas_clase": horas_clase,
+                        "horas_permanencia": horas_permanencia,
+                        "hora_min_inicio": hora_min_inicio,
+                        "hora_max_fin": hora_max_fin,
+                        "es_individual": False,
+                    }
+                )
+
+                if len(resultados) >= MAX_RESULTADOS:
+                    truncado = True
+                    break
+            if truncado:
+                break
+        if truncado:
+            break
+
+    individuales = []
+    for materia in materia_keys:
+        for opcion in materias_seleccionadas[materia]:
+            horas_clase, horas_permanencia, hora_min_inicio, hora_max_fin = calcular_horas([opcion])
+            individuales.append(
                 {
-                    "materias": list(keys),
-                    "combinacion": combinacion,
+                    "materias": [materia],
+                    "combinacion": [opcion],
                     "horas_clase": horas_clase,
                     "horas_permanencia": horas_permanencia,
+                    "hora_min_inicio": hora_min_inicio,
+                    "hora_max_fin": hora_max_fin,
+                    "es_individual": True,
                 }
             )
 
-            if len(resultados) >= MAX_RESULTADOS:
-                truncado = True
-                return
-
-    # Intento principal: todas las materias seleccionadas.
-    agregar_resultados_para_materias(materia_keys)
-
-    # Fallback: si no hubo combinaciones completas, intenta subconjuntos.
-    if not resultados and len(materia_keys) > 1:
-        uso_subconjuntos = True
-        for size in range(len(materia_keys) - 1, 0, -1):
-            for subset in itertools.combinations(materia_keys, size):
-                agregar_resultados_para_materias(subset)
-                if truncado:
-                    break
-            if resultados or truncado:
-                # Si ya hay resultados para el mayor tamaño posible, no bajar más.
-                break
+    resultados.extend(individuales)
 
     resultados.sort(key=lambda x: (-len(x["materias"]), x["horas_permanencia"], x["horas_clase"]))
     for idx, r in enumerate(resultados, start=1):
         r["id"] = idx
+        r["vista_semanal"] = construir_vista_semanal(r)
 
-    max_materias_logradas = max((len(r["materias"]) for r in resultados), default=0)
+    max_materias_logradas = max((len(r["materias"]) for r in resultados if not r["es_individual"]), default=0)
+    if max_materias_logradas < start:
+        uso_subconjuntos = True
     return resultados, truncado, uso_subconjuntos, max_materias_logradas
+
+
+def json_safe(obj):
+    if isinstance(obj, time):
+        return obj.strftime("%H:%M")
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(item) for item in obj]
+    return obj
 
 
 def _get_state():
@@ -212,13 +317,24 @@ def _save_state(state):
     DATASTORE[state_id] = state
 
 
+def _get_result_by_id(state, result_id):
+    if not state:
+        return None
+    for r in state.get("resultados", []):
+        if r.get("id") == result_id:
+            return r
+    return None
+
+
 @app.route("/", methods=["GET"])
 def index():
     state = _get_state() or {}
+    resultados = state.get("resultados", [])
     return render_template(
         "index.html",
         materias_disponibles=state.get("materias_disponibles", []),
-        resultados=state.get("resultados", []),
+        resultados=resultados,
+        resultados_json=json.dumps(json_safe(resultados)),
         resultados_totales=state.get("resultados_totales", 0),
         truncado=state.get("truncado", False),
         uso_subconjuntos=state.get("uso_subconjuntos", False),
@@ -226,40 +342,40 @@ def index():
         total_seleccionadas=state.get("total_seleccionadas", 0),
         pdf_name=state.get("pdf_name"),
         seleccionadas=state.get("seleccionadas", []),
-        max_resultados_mostrados=MAX_RESULTADOS_MOSTRADOS,
+        limite_mostrar=state.get("limite_mostrar", DEFAULT_LIMITE_MOSTRAR),
     )
 
 
 @app.route("/upload", methods=["POST"])
-def upload_pdf():
+def upload_file():
     if "pdf" not in request.files:
         flash("No se recibio ningun archivo.", "error")
         return redirect(url_for("index"))
 
     file = request.files["pdf"]
     if file.filename == "":
-        flash("Debes seleccionar un archivo PDF.", "error")
+        flash("Debes seleccionar un archivo.", "error")
         return redirect(url_for("index"))
 
     if not allowed_file(file.filename):
-        flash("Formato invalido. Solo se permite PDF.", "error")
+        flash("Formato invalido. Solo se permite PDF, XLSX o XLS.", "error")
         return redirect(url_for("index"))
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     safe_name = secure_filename(file.filename)
     save_name = f"{uuid.uuid4()}_{safe_name}"
-    pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], save_name)
-    file.save(pdf_path)
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], save_name)
+    file.save(file_path)
 
     try:
-        cursos = extraer_cursos_desde_pdf(pdf_path)
+        cursos = extraer_cursos_desde_archivo(file_path)
     except Exception as exc:
-        flash(f"No se pudo procesar el PDF: {exc}", "error")
+        flash(f"No se pudo procesar el archivo: {exc}", "error")
         return redirect(url_for("index"))
 
     if not cursos:
         flash(
-            "El PDF se abrio, pero no se detectaron cursos. Revisa que no sea escaneado y que tenga NRC visibles.",
+            "Se abrio el archivo, pero no se detectaron cursos. Verifica que tenga columnas/filas de materias válidas.",
             "error",
         )
         return redirect(url_for("index"))
@@ -296,7 +412,7 @@ def upload_pdf():
         }
     )
 
-    flash(f"PDF procesado. Materias detectadas: {len(materias_disponibles)}", "success")
+    flash(f"Archivo procesado. Materias detectadas: {len(materias_disponibles)}", "success")
     return redirect(url_for("index"))
 
 
@@ -321,27 +437,74 @@ def generate():
         flash("No se encontraron materias seleccionadas validas.", "error")
         return redirect(url_for("index"))
 
-    resultados, truncado, uso_subconjuntos, max_materias_logradas = generar_horarios(materias_filtradas)
+    min_materias = int(request.form.get("min_materias", 3))
+    max_materias = int(request.form.get("max_materias", len(seleccionadas)))
+    limite_mostrar = int(request.form.get("limite_mostrar", DEFAULT_LIMITE_MOSTRAR))
+
+    min_materias = max(1, min(min_materias, len(materias_filtradas)))
+    max_materias = max(min_materias, min(max_materias, len(materias_filtradas)))
+    limite_mostrar = max(1, min(limite_mostrar, MAX_LIMITE_MOSTRAR))
+
+    resultados, truncado, uso_subconjuntos, max_materias_logradas = generar_horarios(
+        materias_filtradas, min_materias, max_materias
+    )
     state["resultados_totales"] = len(resultados)
-    state["resultados"] = resultados[:MAX_RESULTADOS_MOSTRADOS]
+    state["resultados"] = resultados[:limite_mostrar]
     state["seleccionadas"] = seleccionadas
     state["truncado"] = truncado
     state["uso_subconjuntos"] = uso_subconjuntos
     state["max_materias_logradas"] = max_materias_logradas
     state["total_seleccionadas"] = len(materias_filtradas)
+    state["limite_mostrar"] = limite_mostrar
+    state["min_materias"] = min_materias
+    state["max_materias"] = max_materias
     _save_state(state)
 
     if not resultados:
-        flash("No se encontraron combinaciones sin choques ni siquiera usando subconjuntos de materias.", "error")
+        flash("No se encontraron combinaciones sin choques.", "error")
     elif uso_subconjuntos:
         flash(
-            f"No hubo horario con las {len(materias_filtradas)} materias. Mostrando alternativas con hasta {max_materias_logradas} materias sin choque.",
+            f"No se lograron combinaciones con {max_materias} materias. Mostrando alternativas con hasta {max_materias_logradas} materias sin choque.",
             "success",
         )
     else:
         flash(f"Combinaciones generadas: {len(resultados)}", "success")
 
     return redirect(url_for("index"))
+
+
+@app.route("/export/<int:result_id>", methods=["GET"])
+def export_schedule_pdf(result_id):
+    state = _get_state()
+    if not state:
+        flash("No hay sesion activa. Genera horarios primero.", "error")
+        return redirect(url_for("index"))
+
+    resultado = _get_result_by_id(state, result_id)
+    if not resultado:
+        flash("No se encontro ese horario para exportar.", "error")
+        return redirect(url_for("index"))
+
+    html = render_template(
+        "export_schedule.html",
+        r=resultado,
+        pdf_name=state.get("pdf_name"),
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        has_weasyprint=HAS_WEASYPRINT,
+    )
+
+    if HAS_WEASYPRINT:
+        try:
+            pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+            response = make_response(pdf_bytes)
+            response.headers["Content-Type"] = "application/pdf"
+            response.headers["Content-Disposition"] = f'attachment; filename="horario_{result_id}.pdf"'
+            return response
+        except Exception as exc:
+            flash(f"No se pudo generar el PDF en servidor: {exc}", "error")
+
+    # Fallback visual: permite imprimir/guardar como PDF desde el navegador.
+    return html
 
 
 if __name__ == "__main__":
