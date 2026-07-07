@@ -158,11 +158,11 @@ def calcular_horas(combinacion):
 
 
 def construir_vista_semanal(resultado):
-    dias_orden = ["L", "M", "A", "J", "V", "S", "D"]
+    dias_orden = ["L", "A", "M", "J", "V", "S", "D"]
     dias_label = {
         "L": "Lunes",
-        "M": "Martes",
-        "A": "Miercoles",
+        "A": "Martes",
+        "M": "Miercoles",
         "J": "Jueves",
         "V": "Viernes",
         "S": "Sabado",
