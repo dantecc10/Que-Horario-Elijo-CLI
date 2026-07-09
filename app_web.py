@@ -188,7 +188,7 @@ def normalizar_cursos_a_materias(cursos):
 def horas_entre(t1, t2):
     dt1 = datetime.combine(datetime.today(), t1)
     dt2 = datetime.combine(datetime.today(), t2)
-    return (dt2 - dt1).total_seconds() / 3600
+    return round(abs((dt2 - dt1).total_seconds()) / 3600, 1)
 
 
 def horarios_chocan(horarios):
@@ -230,7 +230,8 @@ def calcular_horas(combinacion):
 
     horas_permanencia = 0.0
     for bloques in por_dia.values():
-        bloques.sort()
+        if not bloques:
+            continue
         primero = min(b[0] for b in bloques)
         ultimo = max(b[1] for b in bloques)
         horas_permanencia += horas_entre(primero, ultimo)
