@@ -240,6 +240,14 @@
 					{% endfor %}
 				</tbody>
 			</table>
+
+			<div class="footer" style="margin-top:16px; padding-top:8px; border-top:1px solid #d5cec4; font-size:7.5px; color:#6b6560; text-align:center;">
+				{% if brand.author_name %}Creado por <strong>{{ brand.author_name }}</strong>{% endif %}
+				{% if brand.about_url %} &mdash; <a href="{{ brand.about_url }}" style="color:#0d6b61;">{{ brand.about_url }}</a>{% endif %}
+				{% if brand.contact_email %} &mdash; {{ brand.contact_email }}{% endif %}
+				<br/>
+				{{ brand.app_name }} &copy; {{ generated_at[:4] }} &mdash; Generado con {{ brand.app_name }}
+			</div>
 		</div>
 	</body>
 </html>
