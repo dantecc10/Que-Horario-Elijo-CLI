@@ -183,6 +183,24 @@
 			</section>
 			{% endif %}
 		</main>
+
+		{% if brand.contact_email or brand.contact_github %}
+		<footer class="footer">
+			{% if brand.contact_email %}
+			<a href="mailto:{{ brand.contact_email }}">{{ brand.contact_email }}</a>
+			{% endif %}
+			{% if brand.contact_github %}
+			<a href="{{ brand.contact_github }}" target="_blank" rel="noopener">GitHub</a>
+			{% endif %}
+			{% if brand.report_url %}
+			<a href="{{ brand.report_url }}" target="_blank" rel="noopener">Reportar bug</a>
+			{% endif %}
+			{% if brand.feature_url %}
+			<a href="{{ brand.feature_url }}" target="_blank" rel="noopener">Sugerir mejora</a>
+			{% endif %}
+		</footer>
+		{% endif %}
+
 		<script id="resultados-data" type="application/json">{{ resultados_json | safe }}</script>
 		<script>
 			// --- Recent documents loader ---

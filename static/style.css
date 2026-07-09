@@ -496,6 +496,28 @@ button:not(.btn-secondary):not(.page-btn):not(.tab-btn):not(.accordion-header):h
     font-weight: 600;
 }
 
+/* ─── Footer ─── */
+
+.footer {
+    text-align: center;
+    padding: 24px 16px 32px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    font-size: 0.82rem;
+}
+
+.footer a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+
+.footer a:hover {
+    color: var(--accent);
+}
+
 /* ─── Accordion ─── */
 
 .accordion {
