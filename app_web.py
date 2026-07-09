@@ -3,10 +3,13 @@ import os
 import uuid
 from datetime import datetime, time
 
+from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
 from extract_pdf import calcular_hash_archivo, extraer_cursos_desde_archivo
+
+load_dotenv()
 
 try:
     from weasyprint import HTML
@@ -25,8 +28,30 @@ MAX_LIMITE_MOSTRAR = 5000
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
-# Clave de desarrollo; en produccion define FLASK_SECRET_KEY.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+
+# ─── Branding / personalización desde .env ────────────────
+
+BRAND = {
+    "app_name": os.environ.get("APP_NAME", "Mi Horario BUAP"),
+    "tagline": os.environ.get("APP_TAGLINE", "Genera tus horarios sin choques, rápido y sencillo."),
+    "description": os.environ.get("APP_DESCRIPTION", ""),
+    "logo_text": os.environ.get("LOGO_TEXT", "Mi Horario BUAP"),
+    "header_subtitle": os.environ.get("HEADER_SUBTITLE", "Genera tus horarios sin choques"),
+    "primary_color": os.environ.get("PRIMARY_COLOR", "#0d6b61"),
+    "primary_dark": os.environ.get("PRIMARY_DARK", "#084c44"),
+    "contact_email": os.environ.get("CONTACT_EMAIL", ""),
+    "contact_github": os.environ.get("CONTACT_GITHUB", ""),
+    "contact_twitter": os.environ.get("CONTACT_TWITTER", ""),
+    "contact_discord": os.environ.get("CONTACT_DISCORD", ""),
+    "report_url": os.environ.get("REPORT_URL", ""),
+    "feature_url": os.environ.get("FEATURE_URL", ""),
+}
+
+
+@app.context_processor
+def inject_brand():
+    return {"brand": BRAND}
 
 # Estado en memoria para la sesion actual.
 DATASTORE = {}

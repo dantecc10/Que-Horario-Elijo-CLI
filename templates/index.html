@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Que Horario Elijo - Web</title>
+		<title>{{ brand.app_name }}</title>
 		<link
 			rel="stylesheet"
 			href="{{ url_for('static', filename='style.css') }}" />
@@ -11,11 +11,8 @@
 	<body>
 		<main class="container">
 			<header class="hero">
-				<h1>Que Horario Elijo</h1>
-				<p>
-					Sube tu PDF, revisa materias y genera combinaciones de horario sin
-					choques.
-				</p>
+				<h1>{{ brand.logo_text }}</h1>
+				<p>{{ brand.header_subtitle }}</p>
 			</header>
 
 			{% with messages = get_flashed_messages(with_categories=true) %} {% if
@@ -28,7 +25,7 @@
 			{% endif %} {% endwith %}
 
 			<section class="card">
-				<h2>1. Cargar archivo (PDF/Excel)</h2>
+				<h2><span class="step">1</span> Cargar archivo <span class="meta" style="font-weight:400">(PDF o Excel)</span></h2>
 				<form
 					action="{{ url_for('upload_file') }}"
 					method="post"
@@ -38,20 +35,20 @@
 					<button type="submit">Procesar archivo</button>
 				</form>
 				{% if pdf_name %}
-				<p class="meta">PDF actual: <strong>{{ pdf_name }}</strong></p>
+				<p class="meta" style="margin-top:12px">Archivo actual: <strong>{{ pdf_name }}</strong></p>
 				{% endif %}
 			</section>
 
 			<section class="card" id="recent-docs-section" style="display:none">
-				<h2>Documentos cargados recientemente</h2>
-				<p class="meta">Elige un horario que alguien ya haya subido para evitar reprocesar.</p>
+				<h2>Documentos recientes</h2>
+				<p class="meta">Elige un horario que alguien ya haya subido para saltarte el procesamiento.</p>
 				<div id="recent-docs-list" class="docs-grid"></div>
 			</section>
 
 			{% if materias_disponibles %}
 			<section class="card">
-				<h2>2. Seleccionar materias <span id="selected-count" class="meta"></span></h2>
-				<div style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+				<h2><span class="step">2</span> Seleccionar materias <span id="selected-count" class="meta"></span></h2>
+				<div class="step-toolbar">
 					<button type="button" id="btn-select-all" class="btn-secondary">Seleccionar todas</button>
 					<button type="button" id="btn-deselect-all" class="btn-secondary">Deseleccionar todas</button>
 					<button type="button" id="btn-load-last" class="btn-secondary" style="display:none">Cargar última selección</button>
@@ -61,22 +58,24 @@
 					<div class="subjects-grid">
 						{% for m in materias_disponibles %}
 						<label class="subject-item">
-							<input
-								type="checkbox"
-								name="materias"
-								value="{{ m.nombre }}"
-								{%
-								if
-								m.nombre
-								in
-								seleccionadas
-								%}checked{%
-								endif
-								%} />
-							<span class="subject-name">{{ m.nombre }}</span>
-							<span class="subject-meta"
-								>Opciones de NRC: {{ m.opciones }}</span
-							>
+							<span class="subject-check">
+								<input
+									type="checkbox"
+									name="materias"
+									value="{{ m.nombre }}"
+									{%
+									if
+									m.nombre
+									in
+									seleccionadas
+									%}checked{%
+									endif
+									%} />
+							</span>
+							<span class="subject-body">
+								<span class="subject-name">{{ m.nombre }}</span>
+								<span class="subject-meta">{{ m.opciones }} NRC</span>
+							</span>
 						</label>
 						{% endfor %}
 					</div>
@@ -102,7 +101,7 @@
 			</section>
 			{% endif %} 			{% if resultados %}
 			<section class="card" id="resultados-section">
-				<h2>3. Resultados</h2>
+				<h2><span class="step">3</span> Resultados</h2>
 				<p class="meta" id="resultados-meta"></p>
 				{% if uso_subconjuntos %}
 				<p class="warning">

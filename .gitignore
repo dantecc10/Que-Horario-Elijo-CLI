@@ -8,3 +8,6 @@ __pycache__
 !SchoolSubjectList/LEL.xlsx
 !SchoolSubjectList/ListExample.xlsx
 run.sh
+.env
+uploads/metadata.json
+uploads/data/
