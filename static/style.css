@@ -883,6 +883,7 @@ tr:not(.weekly-table tr):hover td {
     display: grid;
     gap: 10px;
     margin-top: 12px;
+    grid-template-columns: 1fr;
 }
 
 .doc-card {
@@ -895,6 +896,7 @@ tr:not(.weekly-table tr):hover td {
     border-radius: var(--radius-md);
     background: var(--card);
     transition: all var(--transition);
+    max-width: 600px;
 }
 
 .doc-card:hover {
