@@ -40,6 +40,8 @@ BRAND = {
     "header_subtitle": os.environ.get("HEADER_SUBTITLE", "Genera tus horarios sin choques"),
     "primary_color": os.environ.get("PRIMARY_COLOR", "#0d6b61"),
     "primary_dark": os.environ.get("PRIMARY_DARK", "#084c44"),
+    "author_name": os.environ.get("AUTHOR_NAME", ""),
+    "about_url": os.environ.get("ABOUT_URL", ""),
     "contact_email": os.environ.get("CONTACT_EMAIL", ""),
     "contact_github": os.environ.get("CONTACT_GITHUB", ""),
     "contact_twitter": os.environ.get("CONTACT_TWITTER", ""),

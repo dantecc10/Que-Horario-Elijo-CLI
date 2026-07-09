@@ -11,6 +11,9 @@
 			<header class="hero">
 				<h1>{{ brand.logo_text }}</h1>
 				<p>{{ brand.header_subtitle }}</p>
+				{% if brand.author_name %}
+				<p class="hero-author">por {{ brand.author_name }}</p>
+				{% endif %}
 			</header>
 
 			{% with messages = get_flashed_messages(with_categories=true) %}
@@ -170,8 +173,14 @@
 			{% endif %}
 		</main>
 
-		{% if brand.contact_email or brand.contact_github %}
+		{% if brand.contact_email or brand.contact_github or brand.about_url %}
 		<footer class="footer">
+			{% if brand.author_name %}
+			<span class="footer-author">por {{ brand.author_name }}</span>
+			{% endif %}
+			{% if brand.about_url %}
+			<a href="{{ brand.about_url }}" target="_blank" rel="noopener">Conoce más</a>
+			{% endif %}
 			{% if brand.contact_email %}
 			<a href="mailto:{{ brand.contact_email }}">{{ brand.contact_email }}</a>
 			{% endif %}

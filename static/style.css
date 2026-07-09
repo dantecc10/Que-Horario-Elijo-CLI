@@ -97,6 +97,13 @@ body {
     margin-right: auto;
 }
 
+.hero-author {
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-style: italic;
+    margin-top: 8px !important;
+}
+
 /* ─── Cards ─── */
 
 .card {
@@ -619,6 +626,12 @@ button:not(.btn-secondary):not(.page-btn):not(.tab-btn):not(.accordion-header):h
 
 .footer a:hover {
     color: var(--accent);
+}
+
+.footer-author {
+    color: var(--muted);
+    font-style: italic;
+    font-size: 0.82rem;
 }
 
 /* ─── Accordion ─── */
