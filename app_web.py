@@ -187,7 +187,19 @@ def normalizar_cursos_a_materias(cursos):
     return {materia: list(opciones.values()) for materia, opciones in materias.items()}
 
 
+def _ensure_time(v):
+    if isinstance(v, time):
+        return v
+    if isinstance(v, str):
+        return convertir_hora(v)
+    return None
+
+
 def horas_entre(t1, t2):
+    t1 = _ensure_time(t1)
+    t2 = _ensure_time(t2)
+    if not t1 or not t2:
+        return 0
     dt1 = datetime.combine(datetime.today(), t1)
     dt2 = datetime.combine(datetime.today(), t2)
     return round(abs((dt2 - dt1).total_seconds()) / 3600, 1)
@@ -196,10 +208,10 @@ def horas_entre(t1, t2):
 def horarios_chocan(horarios):
     por_dia = {}
     for h in horarios:
-        inicio = h.get("inicio")
-        fin = h.get("fin")
+        inicio = _ensure_time(h.get("inicio"))
+        fin = _ensure_time(h.get("fin"))
         dia = h.get("dia")
-        if not (isinstance(inicio, time) and isinstance(fin, time) and dia):
+        if not (inicio and fin and dia):
             continue
         por_dia.setdefault(dia, []).append((inicio, fin))
 
@@ -218,10 +230,10 @@ def calcular_horas(combinacion):
     hora_max = None
     for opcion in combinacion:
         for h in opcion["horarios"]:
-            inicio = h["inicio"]
-            fin = h["fin"]
+            inicio = _ensure_time(h["inicio"])
+            fin = _ensure_time(h["fin"])
             dia = h["dia"]
-            if not (isinstance(inicio, time) and isinstance(fin, time)):
+            if not (inicio and fin):
                 continue
             horas_clase += horas_entre(inicio, fin)
             por_dia.setdefault(dia, []).append((inicio, fin))
@@ -261,10 +273,10 @@ def construir_vista_semanal(resultado):
     for idx, opcion in enumerate(resultado["combinacion"]):
         materia = resultado["materias"][idx]
         for h in opcion["horarios"]:
-            inicio = h.get("inicio")
-            fin = h.get("fin")
+            inicio = _ensure_time(h.get("inicio"))
+            fin = _ensure_time(h.get("fin"))
             dia = h.get("dia")
-            if not (isinstance(inicio, time) and isinstance(fin, time) and dia in dias_label):
+            if not (inicio and fin and dia in dias_label):
                 continue
             marcas_tiempo.add(inicio)
             marcas_tiempo.add(fin)
