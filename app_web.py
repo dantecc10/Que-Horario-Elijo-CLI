@@ -684,7 +684,9 @@ def export_schedule_pdf(result_id):
 
     if HAS_WEASYPRINT:
         try:
-            pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+            pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf(
+                presentational_hints=True,
+            )
             response = make_response(pdf_bytes)
             response.headers["Content-Type"] = "application/pdf"
             response.headers["Content-Disposition"] = f'attachment; filename="horario_{result_id}.pdf"'

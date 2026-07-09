@@ -3,107 +3,243 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Horario #{{ r.id }}</title>
-		<link
-			rel="stylesheet"
-			href="{{ url_for('static', filename='style.css') }}" />
+		<title>Horario #{{ r.id }} - {{ brand.app_name }}</title>
+		<style>
+			@page {
+				size: A4 landscape;
+				margin: 12mm;
+			}
+
+			* { box-sizing: border-box; margin: 0; padding: 0; }
+
+			body {
+				font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+				font-size: 9px;
+				color: #1c1917;
+				line-height: 1.3;
+				background: #fff;
+			}
+
+			.page { max-width: 100%; padding: 0; }
+
+			.header {
+				text-align: center;
+				margin-bottom: 10px;
+				padding-bottom: 8px;
+				border-bottom: 2px solid #0d6b61;
+			}
+
+			.header h1 {
+				font-size: 16px;
+				color: #0d6b61;
+				margin-bottom: 2px;
+			}
+
+			.header p {
+				font-size: 9px;
+				color: #6b6560;
+			}
+
+			.meta-row {
+				display: flex;
+				justify-content: space-between;
+				gap: 12px;
+				margin-bottom: 10px;
+				font-size: 9px;
+				color: #6b6560;
+			}
+
+			.meta-row span { white-space: nowrap; }
+			.meta-row strong { color: #1c1917; }
+
+			.section-title {
+				font-size: 11px;
+				font-weight: 700;
+				color: #0d6b61;
+				margin: 10px 0 4px;
+				padding-bottom: 2px;
+				border-bottom: 1px solid #e5ddd3;
+			}
+
+			/* Weekly grid */
+			.weekly-table {
+				width: 100%;
+				border-collapse: collapse;
+				table-layout: fixed;
+			}
+
+			.weekly-table th,
+			.weekly-table td {
+				border: 1px solid #d5cec4;
+				padding: 3px 4px;
+				vertical-align: top;
+				text-align: center;
+				font-size: 8px;
+			}
+
+			.weekly-table th {
+				background: #f0ebe3;
+				font-weight: 700;
+				font-size: 8.5px;
+				color: #4a4540;
+			}
+
+			.weekly-table .slot-cell {
+				background: #faf8f4;
+				font-weight: 700;
+				font-size: 8px;
+				color: #6b6560;
+				white-space: nowrap;
+				width: 60px;
+				text-align: right;
+			}
+
+			.event-chip {
+				border: 1px solid #cde4df;
+				border-radius: 3px;
+				padding: 2px 3px;
+				margin: 1px 0;
+				background: #f0f9f7;
+				line-height: 1.2;
+				font-size: 7.5px;
+				text-align: left;
+				word-break: break-word;
+			}
+
+			.event-chip strong {
+				font-size: 8px;
+				color: #0d6b61;
+			}
+
+			.event-chip .ev-meta {
+				color: #6b6560;
+				font-size: 7px;
+			}
+
+			/* Detail table */
+			.detail-table {
+				width: 100%;
+				border-collapse: collapse;
+				margin-top: 4px;
+			}
+
+			.detail-table th,
+			.detail-table td {
+				border: 1px solid #d5cec4;
+				padding: 3px 5px;
+				text-align: left;
+				font-size: 8px;
+			}
+
+			.detail-table th {
+				background: #f0ebe3;
+				font-weight: 700;
+				font-size: 8px;
+				color: #4a4540;
+			}
+
+			.detail-table tr:nth-child(even) td {
+				background: #faf8f4;
+			}
+
+			.badge {
+				display: inline-block;
+				padding: 1px 5px;
+				border-radius: 3px;
+				font-weight: 600;
+				font-size: 7.5px;
+				color: #fff;
+				background: #0d6b61;
+			}
+
+			.no-print { display: none; }
+
+			@media print {
+				.no-print { display: none !important; }
+			}
+		</style>
 	</head>
 	<body>
-		<main class="container export-sheet">
-			<header class="hero">
+		<div class="page">
+			<div class="header">
 				<h1>{{ brand.logo_text }}</h1>
-				<p>Exportacion de horario en formato PDF</p>
-				<p class="meta">
-					Generado: {{ generated_at }} | Fuente: {{ pdf_name }}
-				</p>
-			</header>
+				<p>Horario #{{ r.id }} &mdash; Generado {{ generated_at }} &mdash; Fuente: {{ pdf_name }}</p>
+			</div>
+
+			<div class="meta-row">
+				<span><strong>Materias:</strong> {{ r.materias|join(', ') }}</span>
+				<span><strong>Clase:</strong> {{ '%.1f'|format(r.horas_clase) }}h</span>
+				<span><strong>Permanencia:</strong> {{ '%.1f'|format(r.horas_permanencia) }}h</span>
+				<span><strong>Rango:</strong> {{ r.hora_min_inicio }} &ndash; {{ r.hora_max_fin }}</span>
+			</div>
 
 			{% if not has_weasyprint %}
-			<section class="card export-actions no-print">
-				<p class="warning">
-					El entorno no tiene generador PDF en servidor. Usa el boton de
-					imprimir y elige "Guardar como PDF".
-				</p>
-				<button type="button" onclick="window.print()">
-					Imprimir / Guardar como PDF
-				</button>
-			</section>
+			<div class="no-print" style="margin-bottom:8px; padding:6px; background:#fef3c7; border-radius:4px; font-size:9px; color:#92400e;">
+				Usa el boton imprimir y elige "Guardar como PDF".
+				<button onclick="window.print()" style="margin-left:8px; padding:2px 8px; font-size:8px; cursor:pointer;">Imprimir</button>
+			</div>
 			{% endif %}
 
-			<section class="card">
-				<h2>Horario #{{ r.id }}</h2>
-				<p>Materias: {{ r.materias|join(', ') }}</p>
-				<p>
-					Horas de clase: {{ '%.2f'|format(r.horas_clase) }} | Permanencia: {{
-					'%.2f'|format(r.horas_permanencia) }}
-				</p>
-			</section>
-
-			<section class="card">
-				<h2>Vista Semanal</h2>
-				<table class="weekly-table">
-					<thead>
-						<tr>
-							<th>Horario</th>
-							{% for d in r.vista_semanal.dias %}
-							<th>{{ r.vista_semanal.labels[d] }}</th>
-							{% endfor %}
-						</tr>
-					</thead>
-					<tbody>
-						{% for row in r.vista_semanal.rows %}
-						<tr>
-							<td class="slot-cell">{{ row.slot }}</td>
-							{% for d in r.vista_semanal.dias %}
-							<td>
-								{% for ev in row.cells[d] %}
-								<div class="event-chip">
-									<strong>{{ ev.materia }}</strong><br />
-									NRC {{ ev.nrc }}<br />
-									{{ ev.profesor }}<br />
-									Salon: {{ ev.salon }}
-								</div>
-								{% endfor %}
-							</td>
-							{% endfor %}
-						</tr>
+			<div class="section-title">Vista Semanal</div>
+			<table class="weekly-table">
+				<thead>
+					<tr>
+						<th style="width:55px;">Horario</th>
+						{% for d in r.vista_semanal.dias %}
+						<th>{{ r.vista_semanal.labels[d] }}</th>
 						{% endfor %}
-					</tbody>
-				</table>
-			</section>
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in r.vista_semanal.rows %}
+					<tr>
+						<td class="slot-cell">{{ row.slot }}</td>
+						{% for d in r.vista_semanal.dias %}
+						<td>
+							{% for ev in row.cells[d] %}
+							<div class="event-chip">
+								<strong>{{ ev.materia }}</strong><br/>
+								<span class="ev-meta">NRC {{ ev.nrc }} &middot; {{ ev.profesor }} &middot; {{ ev.salon }}</span>
+							</div>
+							{% endfor %}
+						</td>
+						{% endfor %}
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
 
-			<section class="card">
-				<h2>Tabla Detallada</h2>
-				<table>
-					<thead>
-						<tr>
-							<th>Materia</th>
-							<th>NRC</th>
-							<th>Profesor</th>
-							<th>Dia</th>
-							<th>Inicio</th>
-							<th>Fin</th>
-							<th>Salon</th>
-						</tr>
-					</thead>
-					<tbody>
-						{% for idx in range(r.combinacion|length) %} {% set opcion =
-						r.combinacion[idx] %} {% set materia = r.materias[idx] %} {% for h
-						in opcion.horarios %}
-						<tr>
-							<td>{{ materia }}</td>
-							<td>{{ opcion.nrc }}</td>
-							<td>{{ opcion.profesor }}</td>
-							<td>{{ h.dia }}</td>
-							<td>{{ h.inicio.strftime('%H:%M') }}</td>
-							<td>{{ h.fin.strftime('%H:%M') }}</td>
-							<td>{{ h.salon }}</td>
-						</tr>
-						{% endfor %} {% endfor %}
-					</tbody>
-				</table>
-			</section>
-		</main>
+			<div class="section-title">Tabla Detallada</div>
+			<table class="detail-table">
+				<thead>
+					<tr>
+						<th>Materia</th>
+						<th>NRC</th>
+						<th>Profesor</th>
+						<th>Dia</th>
+						<th>Inicio</th>
+						<th>Fin</th>
+						<th>Salon</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for idx in range(r.combinacion|length) %}
+					{% set opcion = r.combinacion[idx] %}
+					{% set materia = r.materias[idx] %}
+					{% for h in opcion.horarios %}
+					<tr>
+						<td><span class="badge">{{ materia }}</span></td>
+						<td>{{ opcion.nrc }}</td>
+						<td>{{ opcion.profesor }}</td>
+						<td>{{ h.dia }}</td>
+						<td>{{ h.inicio if h.inicio is string else h.inicio.strftime('%H:%M') }}</td>
+						<td>{{ h.fin if h.fin is string else h.fin.strftime('%H:%M') }}</td>
+						<td>{{ h.salon }}</td>
+					</tr>
+					{% endfor %}
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
 	</body>
 </html>
-
