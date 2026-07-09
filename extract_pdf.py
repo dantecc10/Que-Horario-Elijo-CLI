@@ -3,6 +3,47 @@ import pandas as pd
 import re
 import os
 import unicodedata
+import hashlib
+
+
+FOOTER_PATTERNS = [
+    r"P[áa]gina\s+\d+",
+    r"Programaci[óo]n Acad[ée]mica\s+de\s+.*",
+    r"Las secciones sombreadas se impartir[áa]n en CU2",
+    r"Licenciatura en.*",
+    r"BENEM[EÉ]RITA UNIVERSIDAD AUT[ÓO]NOMA DE PUEBLA",
+    r"SIGNIFICADO",
+    r"Lunes y mi[ée]rcoles",
+    r"Martes y viernes",
+    r"Lunes",
+    r"Martes",
+    r"Mi[ée]rcoles",
+    r"Jueves",
+    r"Viernes",
+    r"S[áa]bado",
+    r"EJEMPLO:",
+    r"Horario X de.*",
+    r"Horario Y de.*",
+    r"Horario XX de.*",
+    r"Horario YY de.*",
+    r"CLAVE\s*\n\s*MATERIA\s*\n\s*NRC\s*\n\s*CUPO\s*\n\s*DIAS\s*\n\s*HORARIO UBICACI[OÓ]N\s*\n\s*DOCENTE\s*\n\s*BLOQUES NUEVO\s*\n\s*INGRESO",
+    r"CLAVE\s*\n\s*NRC LISTA\s*\n\s*CRUZADA",
+    r"^\s*L\s*\n\s*A\s*\n\s*M\s*\n\s*J\s*\n\s*V\s*\n\s*S\s*$",
+]
+
+
+def _limpiar_pies_pagina(texto):
+    for patron in FOOTER_PATTERNS:
+        texto = re.sub(patron, "", texto, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
+    return texto
+
+
+def calcular_hash_archivo(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def limpiar_encabezados(texto):
@@ -297,25 +338,41 @@ def parsear_linea_horario(linea_texto):
         "Aclaraciones": grupos[8].strip(),
     }
 
-    # En algunos PDFs, el token de salón queda al final de aclaraciones.
-    # Ejemplo real: Profesor="AMBROSIO", Salon="-", Aclaraciones="VAZQUEZ ALMA DELIA 1CCO5/107"
-    if datos["Salon"] == "-" and datos["Aclaraciones"]:
+    # En algunos PDFs, el token de salón queda al final de aclaraciones,
+    # o el regex capturó el salón real como "-" y el verdadero salón está
+    # en medio de aclaraciones (contaminado por pies de página).
+    # Buscar cualquier token con patrón de salón (edificio/sala) en aclaraciones.
+    if (datos["Salon"] == "-" or _es_patron_salon(datos.get("Salon", "")) is False) and datos.get("Aclaraciones"):
         tokens = datos["Aclaraciones"].split()
-        if tokens:
-            posible_salon = tokens[-1]
-            if re.match(r"^[A-Za-z0-9]+/[A-Za-z0-9]+$", posible_salon):
-                profesor_extra = " ".join(tokens[:-1]).strip()
-                if profesor_extra:
+        idx_salon = None
+        for i, tok in enumerate(tokens):
+            if re.match(r"^[A-Za-z0-9]+/[A-Za-z0-9]+$", tok):
+                idx_salon = i
+                break
+        if idx_salon is not None:
+            posible_salon = tokens[idx_salon]
+            partes_antes = tokens[:idx_salon]
+            partes_despues = tokens[idx_salon + 1:]
+            if partes_antes:
+                profesor_extra = " ".join(partes_antes).strip()
+                if datos["Profesor"] == "-":
+                    datos["Profesor"] = profesor_extra
+                else:
                     datos["Profesor"] = f"{datos['Profesor']} {profesor_extra}".strip()
-                datos["Salon"] = posible_salon
-                datos["Aclaraciones"] = ""
+            datos["Salon"] = posible_salon
+            datos["Aclaraciones"] = " ".join(partes_despues).strip()
 
     return datos
 
 
+def _es_patron_salon(valor):
+    return bool(re.match(r"^[A-Za-z0-9]+/[A-Za-z0-9]+$", valor))
+
+
 def _parsear_formato_buap_page(texto_pagina):
     cursos_encontrados = []
-    text_pag_sin_encabeza = limpiar_encabezados(texto_pagina)
+    text_pag_sin_pies = _limpiar_pies_pagina(texto_pagina)
+    text_pag_sin_encabeza = limpiar_encabezados(text_pag_sin_pies)
     lineas_utiles = separar_lineas_por_nrc(text_pag_sin_encabeza)
 
     for linea in lineas_utiles:
@@ -332,6 +389,7 @@ def _parsear_formato_pal_page(texto_pagina):
     Parser alterno para documentos tipo PAL (cuatrimestral), donde el layout
     está en columnas por día y la extracción de texto sale por renglones sueltos.
     """
+    texto_pagina = _limpiar_pies_pagina(texto_pagina)
     dias = ["L", "M", "A", "J", "V", "S"]
     cursos = []
 
@@ -447,6 +505,260 @@ def _parsear_formato_pal_page(texto_pagina):
     return cursos
 
 
+# Mapa de bloques FCFM a días de la semana
+BLOQUE_FCFM_MAP = {
+    "X": ["L", "M", "J"],
+    "Y": ["A", "J", "V"],
+    "XX": ["L", "M"],
+    "YY": ["A", "V"],
+}
+
+
+def _expandir_dias_fcfm(codigo_dias, hora_ini, hora_fin):
+    """
+    Expande el código de días del formato FCFM.
+    Puede ser un bloque (X/Y/XX/YY) o días explícitos (L,M,V, A,J, etc.).
+    Para bloques X/Y, J recibe hora ajustada:
+      - X: J tiene solo la primera hora (fin = ini + 59 en HHMM)
+      - Y: J tiene solo la segunda hora (ini = ini + 100 en HHMM)
+    """
+    codigo = codigo_dias.replace(" ", "").replace(",", "").upper()
+
+    if codigo in BLOQUE_FCFM_MAP:
+        dias_base = BLOQUE_FCFM_MAP[codigo]
+        ini_int = int(hora_ini)
+        fin_int = int(hora_fin)
+        resultados = []
+        for d in dias_base:
+            if codigo == "X" and d == "J":
+                # J recibe solo la primera hora
+                fin_j = ini_int + 59
+                resultados.append((d, hora_ini, f"{min(fin_j, fin_int):04d}"))
+            elif codigo == "Y" and d == "J":
+                # J recibe solo la segunda hora
+                ini_j = ini_int + 100
+                resultados.append((d, f"{min(ini_j, fin_int):04d}", hora_fin))
+            else:
+                resultados.append((d, hora_ini, hora_fin))
+        return resultados
+    else:
+        # Días explícitos: expandir caracter individual
+        dias_validos = set("LMAJVSD")
+        resultados = []
+        for ch in codigo:
+            if ch in dias_validos:
+                resultados.append((ch, hora_ini, hora_fin))
+        return resultados
+
+
+def _es_clave_fcfm(linea):
+    """Reconoce líneas como 'FGMA 004', 'ACTS 001', 'FISS 003', etc."""
+    return bool(re.match(r"^[A-Za-z]{3,6}\s+\d{2,4}\b", linea.strip()))
+
+
+def _es_nrc_cupo(linea):
+    """Reconoce líneas como '30013 50' (NRC + cupo)"""
+    return bool(re.match(r"^\d{5}\s+\d{2,3}$", linea.strip()))
+
+
+def _es_tiempo_salon(linea):
+    """Reconoce líneas como '1000-1159 1FM4/101'"""
+    return bool(re.match(r"^\d{4}-\d{4}\s+\S+/?\S*$", linea.strip()))
+
+
+def _es_bloque_nuevo_ingreso(linea):
+    """Reconoce códigos como 'ACT0126OT', 'FIS0126OT', 'LFA0126OT' o referencias como 'MATS 001 27693'"""
+    limpia = linea.strip()
+    if re.match(r"^[A-Za-z]{3,6}\s+\d{2,4}\s+\d{5}$", limpia):
+        return True
+    if re.match(r"^[A-Za-z]{3,6}\d{2,4}OT\b", limpia):
+        return True
+    return False
+
+
+def _parsear_formato_fcfm_page(texto_pagina):
+    """
+    Parser para el formato FCFM (Facultad de Ciencias Físico Matemáticas).
+    Tiene un sistema de 'bloques' (X, Y, XX, YY) para indicar días y
+    un layout distinto al BUAP estándar.
+    """
+    texto_pagina = _limpiar_pies_pagina(texto_pagina)
+    lineas_raw = [l.strip() for l in texto_pagina.split("\n") if l.strip()]
+
+    # Filtrar ruido obvio
+    lineas = []
+    for l in lineas_raw:
+        upper = l.upper()
+        if upper.startswith(("CLAVE", "MATERIA", "NRC", "CUPO", "DIAS", "HORARIO", "DOCENTE", "BLOQUES", "NUEVO", "INGRESO", "LUNES", "MARTES", "MIÉRCOLES", "MIERCOLES", "JUEVES", "VIERNES", "SÁBADO", "SABADO", "HORARIO POR MATERIA", "SIGNIFICADO", "EJEMPLO:", "L ", "A ", "M ", "J ", "V ", "S ")):
+            continue
+        if re.match(r"^(L|A|M|J|V|S)\s*$", l) and len(l.strip()) <= 2:
+            continue
+        if re.match(r"^Horario\s+[XY]+\s+de\s+\d+", l, re.IGNORECASE):
+            continue
+        if "BENEMÉRITA UNIVERSIDAD" in upper or "FACULTAD DE CIENCIAS" in upper:
+            continue
+        if re.match(r"^[LMAJVSD,\s]+$", l) and l.strip().replace(",", "").replace(" ", "").upper() in ("L", "A", "M", "J", "V", "S", "LA", "LM", "LAM", "LMA", "AMJ", "AJV", "LAMJ", "LAMJV", "LMV", "AMJV", "LAJV", "LAJ", "MJ", "AV", "L-V", "LMJV", "AMJ", "AMV"):
+            # Estas son líneas de solo días: podrían ser parte de una entrada o
+            # ruido, las dejamos pasar porque pueden ser días explícitos
+            lineas.append(l)
+            continue
+        lineas.append(l)
+
+    cursos = []
+    i = 0
+    while i < len(lineas):
+        linea = lineas[i]
+
+        # Buscar inicio de bloque: una clave FCFM
+        if not _es_clave_fcfm(linea):
+            i += 1
+            continue
+
+        clave = linea
+        materia_partes = []
+        i += 1
+
+        # Acumular líneas de materia hasta encontrar NRC+Cupo
+        nrc = None
+        cupo = None
+        while i < len(lineas):
+            if _es_nrc_cupo(lineas[i]):
+                partes = lineas[i].split()
+                nrc = partes[0]
+                cupo = partes[1]
+                i += 1
+                break
+            elif _es_clave_fcfm(lineas[i]):
+                # Llegó otra clave sin encontrar NRC - la entrada anterior
+                # no tenía NRC, reiniciar
+                materia_partes = []
+                break
+            else:
+                materia_partes.append(lineas[i])
+                i += 1
+
+        if nrc is None:
+            continue
+
+        materia = " ".join(materia_partes).strip() if materia_partes else ""
+        # Si la materia está vacía, extraerla de la línea de clave
+        if not materia:
+            m = re.match(r"^([A-Za-z]{3,6}\s+\d{2,4})\s+(.+)$", clave)
+            if m:
+                clave = m.group(1).strip()
+                materia = m.group(2).strip()
+            else:
+                # Intentar siguiente línea
+                if i < len(lineas) and not _es_nrc_cupo(lineas[i]) and not _es_tiempo_salon(lineas[i]):
+                    materia = lineas[i]
+                    i += 1
+        else:
+            # Extraer clave limpia (sin materia)
+            m = re.match(r"^([A-Za-z]{3,6}\s+\d{2,4})", clave)
+            if m:
+                clave = m.group(1).strip()
+
+        if not materia:
+            continue
+
+        # Días/bloque
+        if i >= len(lineas):
+            break
+        codigo_dias = lineas[i]
+        i += 1
+
+        # Tiempo y salón
+        if i >= len(lineas):
+            break
+        if not _es_tiempo_salon(lineas[i]):
+            continue
+        tiempo_salon = lineas[i]
+        i += 1
+
+        m_tiempo = re.match(r"^(\d{4})-(\d{4})\s+(.+)$", tiempo_salon)
+        if not m_tiempo:
+            continue
+        hora_ini_str = m_tiempo.group(1)
+        hora_fin_str = m_tiempo.group(2)
+        salon = m_tiempo.group(3).strip()
+
+        # Docente: acumular líneas hasta encontrar
+        # - un bloque nuevo ingreso
+        # - otra clave FCFM
+        # - o fin de página
+        partes_docente = []
+        bloque_code = None
+        while i < len(lineas):
+            if _es_bloque_nuevo_ingreso(lineas[i]):
+                bloque_code = lineas[i]
+                i += 1
+                break
+            if _es_clave_fcfm(lineas[i]):
+                break
+            if _es_nrc_cupo(lineas[i]):
+                break
+            if _es_tiempo_salon(lineas[i]):
+                break
+
+            # La línea puede contener el código de bloque al final (ej: "GARCIA - VILCHIS ANA LLUVIA ACT0126OT")
+            linea_actual = lineas[i]
+            m_code = re.search(r"\b([A-Za-z]{3,6}\d{2,4}OT)\b", linea_actual)
+            if m_code:
+                antes = linea_actual[:m_code.start()].strip()
+                if antes:
+                    partes_docente.append(antes)
+                bloque_code = m_code.group(1)
+                i += 1
+                break
+            partes_docente.append(linea_actual)
+            i += 1
+
+        profesor = " ".join(partes_docente).strip() if partes_docente else "SIN DOCENTE"
+        # Limpiar guiones sueltos y espacios extras
+        profesor = re.sub(r"\s+", " ", profesor).strip()
+        profesor = re.sub(r"^\s*-\s*", "", profesor).strip()
+        # Limpiar cualquier código OT residual (ej: ACT0126OT, FIS0226OT)
+        profesor = re.sub(r"\b[A-Za-z]{3,6}\d{2,4}OT\b", "", profesor).strip()
+        profesor = re.sub(r"\s+", " ", profesor).strip()
+
+        # Expandir días
+        horarios = _expandir_dias_fcfm(codigo_dias, hora_ini_str, hora_fin_str)
+        for dia, ini, fin in horarios:
+            cursos.append({
+                "NRC": nrc,
+                "Clave": clave,
+                "Materia": materia,
+                "Profesor": profesor,
+                "Hora de inicio": ini,
+                "Hora de fin": fin,
+                "Dia": dia,
+                "Salon": salon,
+                "Aclaraciones": "",
+            })
+
+    return cursos
+
+
+def _detectar_tipo_pdf(pdf_path):
+    """
+    Detecta el tipo de PDF basado en el contenido de la primera página.
+    Retorna: 'buap', 'pal', 'fcfm', o None
+    """
+    doc = pymupdf.open(pdf_path)
+    try:
+        page = doc.load_page(0)
+        texto = page.get_textpage().extractText().upper()
+    finally:
+        doc.close()
+
+    if "FACULTAD DE CIENCIAS FÍSICO MATEMÁTICAS" in texto:
+        return "fcfm"
+    if "PA " in texto or "PROGRAMACION ACADEMICA" in texto:
+        return "pal"
+    if "NRC" in texto and "CLAVE" in texto:
+        return "buap"
+    return None
+
 
 def extraer_cursos_desde_pdf(pdf_path):
     """
@@ -457,6 +769,10 @@ def extraer_cursos_desde_pdf(pdf_path):
     """
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"No se encontro el archivo: {pdf_path}")
+
+    tipo = _detectar_tipo_pdf(pdf_path)
+    if tipo == "fcfm":
+        return _extraer_fcfm_completo(pdf_path)
 
     cursos_encontrados = []
     doc = pymupdf.open(pdf_path)
@@ -476,7 +792,77 @@ def extraer_cursos_desde_pdf(pdf_path):
     finally:
         doc.close()
 
+    # Merge post-parseo: unificar nombres de profesor partidos
+    cursos_encontrados = _merge_por_nrc(cursos_encontrados)
+
     return cursos_encontrados
+
+
+def _extraer_fcfm_completo(pdf_path):
+    """
+    Extrae cursos de un PDF en formato FCFM leyendo todas las páginas
+    con el parser FCFM.
+    """
+    doc = pymupdf.open(pdf_path)
+    cursos_encontrados = []
+    try:
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            texto_pagina = page.get_textpage().extractText()
+            cursos = _parsear_formato_fcfm_page(texto_pagina)
+            for c in cursos:
+                if c not in cursos_encontrados:
+                    cursos_encontrados.append(c)
+    finally:
+        doc.close()
+    return cursos_encontrados
+
+
+def _merge_por_nrc(cursos):
+    """
+    Agrupa cursos por NRC y unifica nombres de profesor incompletos.
+    Cuando un mismo NRC tiene el mismo día/hora/salón pero profesor
+    diferente (uno incompleto por error de parsing), se queda con el
+    nombre más largo/completo.
+    """
+    from collections import defaultdict
+
+    grupos = defaultdict(list)
+    for c in cursos:
+        grupos[c["NRC"]].append(c)
+
+    result = []
+    for nrc, entries in grupos.items():
+        if len(entries) <= 1:
+            result.extend(entries)
+            continue
+
+        # Construir un mapa: (dia, inicio, fin, salon) -> mejor profesor
+        slot_prof = {}
+        for c in entries:
+            key = (c["Dia"], c["Hora de inicio"], c["Hora de fin"], c["Salon"])
+            prof = c["Profesor"]
+            if key in slot_prof:
+                existente = slot_prof[key]
+                if len(prof) > len(existente):
+                    slot_prof[key] = prof
+            else:
+                slot_prof[key] = prof
+
+        # Reconstruir entries con el mejor profesor por slot
+        vistos = set()
+        for c in entries:
+            key = (c["Dia"], c["Hora de inicio"], c["Hora de fin"], c["Salon"])
+            if key in vistos:
+                continue
+            vistos.add(key)
+            mejor_prof = slot_prof.get(key, c["Profesor"])
+            c["Profesor"] = mejor_prof
+            if c not in result:
+                result.append(c)
+
+    return result
+
 
 def extraer_pdf_a_excel(pdf_path, excel_path):
     """

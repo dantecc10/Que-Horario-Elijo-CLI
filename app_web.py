@@ -3,10 +3,10 @@ import os
 import uuid
 from datetime import datetime, time
 
-from flask import Flask, flash, make_response, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
-from extract_pdf import extraer_cursos_desde_archivo
+from extract_pdf import calcular_hash_archivo, extraer_cursos_desde_archivo
 
 try:
     from weasyprint import HTML
@@ -30,6 +30,65 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 
 # Estado en memoria para la sesion actual.
 DATASTORE = {}
+
+# Archivo de metadatos de documentos subidos
+METADATA_PATH = os.path.join(UPLOAD_FOLDER, "metadata.json")
+UPLOADS_DATA_DIR = os.path.join(UPLOAD_FOLDER, "data")
+
+
+def _cargar_metadatos():
+    if not os.path.exists(METADATA_PATH):
+        return {"files": []}
+    try:
+        with open(METADATA_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"files": []}
+
+
+def _guardar_metadatos(metadatos):
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    with open(METADATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(metadatos, f, ensure_ascii=False, indent=2)
+
+
+def _registrar_archivo(file_uuid, original_name, cursos, materias_disponibles):
+    metadatos = _cargar_metadatos()
+    metadatos["files"] = [f for f in metadatos["files"] if f["uuid"] != file_uuid]
+    file_path = os.path.join(UPLOAD_FOLDER, f"{file_uuid}_{original_name}")
+    sha256 = calcular_hash_archivo(file_path) if os.path.exists(file_path) else ""
+    metadatos["files"].append({
+        "uuid": file_uuid,
+        "original_name": original_name,
+        "sha256": sha256,
+        "uploaded_at": datetime.now().isoformat(),
+        "total_courses": len(cursos),
+        "total_materias": len(materias_disponibles),
+        "subjects": [m["nombre"] for m in materias_disponibles],
+    })
+    _guardar_metadatos(metadatos)
+
+
+def _guardar_datos_extraidos(file_uuid, cursos, materias):
+    os.makedirs(UPLOADS_DATA_DIR, exist_ok=True)
+    path = os.path.join(UPLOADS_DATA_DIR, f"{file_uuid}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({
+            "cursos": cursos,
+            "materias": materias,
+        }, f, ensure_ascii=False, indent=2, default=str)
+
+
+def _cargar_datos_extraidos(file_uuid):
+    path = os.path.join(UPLOADS_DATA_DIR, f"{file_uuid}.json")
+    if not os.path.exists(path):
+        return None, None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("cursos"), data.get("materias")
+    except Exception:
+        return None, None
 
 
 def allowed_file(filename):
@@ -363,9 +422,42 @@ def upload_file():
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     safe_name = secure_filename(file.filename)
-    save_name = f"{uuid.uuid4()}_{safe_name}"
+    file_uuid = str(uuid.uuid4())
+    save_name = f"{file_uuid}_{safe_name}"
     file_path = os.path.join(app.config["UPLOAD_FOLDER"], save_name)
     file.save(file_path)
+
+    # Detectar si es un archivo ya procesado por hash
+    file_hash = calcular_hash_archivo(file_path)
+    metadatos = _cargar_metadatos()
+    existing = [f for f in metadatos["files"] if f.get("sha256") == file_hash]
+    if existing:
+        # Archivo ya procesado, cargar datos cacheados
+        cached_uuid = existing[0]["uuid"]
+        cursos, materias = _cargar_datos_extraidos(cached_uuid)
+        if cursos and materias:
+            materias_disponibles = [
+                {"nombre": m, "opciones": len(set(c["NRC"] for c in cursos if c["Materia"] == m))}
+                for m in materias
+            ]
+            _save_state({
+                "pdf_name": safe_name,
+                "file_uuid": cached_uuid,
+                "materias": materias,
+                "materias_disponibles": materias_disponibles,
+                "resultados": [],
+                "resultados_totales": 0,
+                "seleccionadas": [],
+                "truncado": False,
+                "uso_subconjuntos": False,
+                "max_materias_logradas": 0,
+                "total_seleccionadas": 0,
+            })
+            flash(
+                f"Archivo ya procesado anteriormente. Datos recuperados de cache. Materias: {len(materias)}",
+                "success",
+            )
+            return redirect(url_for("index"))
 
     try:
         cursos = extraer_cursos_desde_archivo(file_path)
@@ -400,6 +492,7 @@ def upload_file():
     _save_state(
         {
             "pdf_name": safe_name,
+            "file_uuid": file_uuid,
             "materias": materias,
             "materias_disponibles": materias_disponibles,
             "resultados": [],
@@ -412,7 +505,63 @@ def upload_file():
         }
     )
 
+    # Registrar en metadatos y cachear datos extraídos
+    _registrar_archivo(file_uuid, safe_name, cursos, materias_disponibles)
+    _guardar_datos_extraidos(file_uuid, cursos, materias)
+
     flash(f"Archivo procesado. Materias detectadas: {len(materias_disponibles)}", "success")
+    return redirect(url_for("index"))
+
+
+@app.route("/api/recent-documents", methods=["GET"])
+def api_recent_documents():
+    metadatos = _cargar_metadatos()
+    files = metadatos.get("files", [])
+    files.sort(key=lambda f: f.get("uploaded_at", ""), reverse=True)
+    return jsonify(files[:20])
+
+
+@app.route("/load-document/<file_uuid>", methods=["POST"])
+def load_document(file_uuid):
+    cursos, materias = _cargar_datos_extraidos(file_uuid)
+    if not cursos or not materias:
+        flash("No se pudieron cargar los datos del documento.", "error")
+        return redirect(url_for("index"))
+
+    metadatos = _cargar_metadatos()
+    info = None
+    for f in metadatos.get("files", []):
+        if f["uuid"] == file_uuid:
+            info = f
+            break
+
+    pdf_name = info["original_name"] if info else "documento"
+    materias_disponibles_meta = info.get("subjects", []) if info else []
+    materias_disponibles = [
+        {"nombre": m, "opciones": len(materias.get(m, []))}
+        for m in materias_disponibles_meta
+    ]
+
+    _save_state(
+        {
+            "pdf_name": pdf_name,
+            "file_uuid": file_uuid,
+            "materias": materias,
+            "materias_disponibles": materias_disponibles,
+            "resultados": [],
+            "resultados_totales": 0,
+            "seleccionadas": [],
+            "truncado": False,
+            "uso_subconjuntos": False,
+            "max_materias_logradas": 0,
+            "total_seleccionadas": 0,
+        }
+    )
+
+    flash(
+        f"Documento cargado: {pdf_name} ({len(materias)} materias disponibles)",
+        "success",
+    )
     return redirect(url_for("index"))
 
 

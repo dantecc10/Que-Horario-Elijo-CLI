@@ -42,6 +42,12 @@
 				{% endif %}
 			</section>
 
+			<section class="card" id="recent-docs-section" style="display:none">
+				<h2>Documentos cargados recientemente</h2>
+				<p class="meta">Elige un horario que alguien ya haya subido para evitar reprocesar.</p>
+				<div id="recent-docs-list" class="docs-grid"></div>
+			</section>
+
 			{% if materias_disponibles %}
 			<section class="card">
 				<h2>2. Seleccionar materias <span id="selected-count" class="meta"></span></h2>
@@ -179,6 +185,37 @@
 			{% endif %}
 		</main>
 		<script id="resultados-data" type="application/json">{{ resultados_json | safe }}</script>
+		<script>
+			// --- Recent documents loader ---
+			async function loadRecentDocuments() {
+				try {
+					const resp = await fetch("/api/recent-documents");
+					if (!resp.ok) return;
+					const docs = await resp.json();
+					if (!docs || docs.length === 0) return;
+					const section = document.getElementById("recent-docs-section");
+					const list = document.getElementById("recent-docs-list");
+					section.style.display = "";
+					list.innerHTML = docs.map(d => {
+						const date = d.uploaded_at ? new Date(d.uploaded_at).toLocaleString("es-MX") : "";
+						const subs = d.subjects ? d.subjects.slice(0, 8).join(", ") + (d.subjects.length > 8 ? "..." : "") : "";
+						return `<div class="doc-card">
+							<div class="doc-info">
+								<strong class="doc-name">${d.original_name}</strong>
+								<span class="doc-meta">${date} · ${d.total_courses || 0} cursos · ${d.total_materias || 0} materias</span>
+								<span class="doc-subjects">${subs}</span>
+							</div>
+							<form action="/load-document/${d.uuid}" method="post" style="margin:0">
+								<button type="submit" class="btn-secondary">Usar este horario</button>
+							</form>
+						</div>`;
+					}).join("");
+				} catch (e) {
+					// Silently fail
+				}
+			}
+			document.addEventListener("DOMContentLoaded", loadRecentDocuments);
+		</script>
 		<script>
 			const ALL_RESULTS = JSON.parse(document.getElementById("resultados-data").textContent);
 			const MATERIAS_COLORS = [

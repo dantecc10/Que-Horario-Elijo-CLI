@@ -465,6 +465,53 @@ th {
     background: #f6efe4;
 }
 
+.docs-grid {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.doc-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fffdf8;
+    transition: background 0.15s;
+}
+
+.doc-card:hover {
+    background: #f6f2eb;
+}
+
+.doc-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+}
+
+.doc-name {
+    font-size: 0.95rem;
+}
+
+.doc-meta {
+    font-size: 0.82rem;
+    color: var(--muted);
+}
+
+.doc-subjects {
+    font-size: 0.8rem;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 @media (max-width: 800px) {
     .container {
         padding: 14px;
