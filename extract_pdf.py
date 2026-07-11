@@ -519,8 +519,8 @@ def _expandir_dias_fcfm(codigo_dias, hora_ini, hora_fin):
     Expande el código de días del formato FCFM.
     Puede ser un bloque (X/Y/XX/YY) o días explícitos (L,M,V, A,J, etc.).
     Para bloques X/Y, J recibe hora ajustada:
-      - X: J tiene solo la primera hora (fin = ini + 59 en HHMM)
-      - Y: J tiene solo la segunda hora (ini = ini + 100 en HHMM)
+      - X: J tiene solo la primera hora (fin = ini + 1h en HHMM)
+      - Y: J tiene solo la segunda hora (ini = ini + 1h en HHMM)
     """
     codigo = codigo_dias.replace(" ", "").replace(",", "").upper()
 
@@ -532,7 +532,7 @@ def _expandir_dias_fcfm(codigo_dias, hora_ini, hora_fin):
         for d in dias_base:
             if codigo == "X" and d == "J":
                 # J recibe solo la primera hora
-                fin_j = ini_int + 59
+                fin_j = ini_int + 100
                 resultados.append((d, hora_ini, f"{min(fin_j, fin_int):04d}"))
             elif codigo == "Y" and d == "J":
                 # J recibe solo la segunda hora

@@ -300,6 +300,9 @@ def construir_vista_semanal(resultado):
     for i in range(len(cortes) - 1):
         ini = cortes[i]
         fin = cortes[i + 1]
+        # Saltar slots menores a 5 minutos (artefactos por redondeos en horarios FCFM/PAL)
+        if (datetime.combine(datetime.today(), fin) - datetime.combine(datetime.today(), ini)).total_seconds() < 300:
+            continue
         cells = {d: [] for d in dias_orden}
 
         for ev in eventos:
