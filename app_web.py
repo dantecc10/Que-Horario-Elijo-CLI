@@ -386,7 +386,6 @@ def generar_horarios(materias_seleccionadas, min_materias=3, max_materias=None):
     resultados.sort(key=lambda x: (-len(x["materias"]), x["horas_permanencia"], x["horas_clase"]))
     for idx, r in enumerate(resultados, start=1):
         r["id"] = idx
-        r["vista_semanal"] = construir_vista_semanal(r)
 
     max_materias_logradas = max((len(r["materias"]) for r in resultados if not r["es_individual"]), default=0)
     if max_materias_logradas < start:
@@ -642,6 +641,8 @@ def generate():
     )
     state["resultados_totales"] = len(resultados)
     state["resultados"] = resultados[:limite_mostrar]
+    for r in state["resultados"]:
+        r["vista_semanal"] = construir_vista_semanal(r)
     state["seleccionadas"] = seleccionadas
     state["truncado"] = truncado
     state["uso_subconjuntos"] = uso_subconjuntos

@@ -10,8 +10,8 @@ cd "$PROJECT_DIR" || exit 1
 echo "Activando entorno virtual..."
 source .venv/bin/activate
 
-echo "🚀 Iniciando servidor Flask en puerto $LOCAL_PORT..."
-python app_web.py &
+echo "🚀 Iniciando gunicorn en puerto $LOCAL_PORT (1 worker, 4 threads)..."
+gunicorn app_web:app --bind 127.0.0.1:$LOCAL_PORT --workers 1 --threads 4 --timeout 120 --access-logfile - &
 FLASK_PID=$!
 
 sleep 2
