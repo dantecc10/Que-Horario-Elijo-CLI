@@ -19,6 +19,14 @@ except Exception:
     HAS_WEASYPRINT = False
 
 
+MATERIA_COLORS = [
+    "#0ea5e9", "#8b5cf6", "#f97316", "#10b981", "#e11d48", "#6366f1", "#14b8a6", "#f59e0b",
+    "#ec4899", "#84cc16", "#06b6d4", "#a855f7", "#ef4444", "#22c55e", "#3b82f6", "#d946ef",
+]
+
+def _build_color_map(materias):
+    return {m: MATERIA_COLORS[i % len(MATERIA_COLORS)] for i, m in enumerate(materias)}
+
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "xlsx", "xls"}
 MAX_RESULTADOS = 50000
@@ -726,6 +734,7 @@ def convertir_horario():
             pdf_name=f"Horario: {safe_name}",
             generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
             has_weasyprint=HAS_WEASYPRINT,
+            color_map=_build_color_map(materia_names),
         )
 
         if HAS_WEASYPRINT:
@@ -874,6 +883,7 @@ def export_schedule_pdf(result_id):
         pdf_name=state.get("pdf_name"),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         has_weasyprint=HAS_WEASYPRINT,
+        color_map=_build_color_map(resultado["materias"]),
     )
 
     if HAS_WEASYPRINT:
