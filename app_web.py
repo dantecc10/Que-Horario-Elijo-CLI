@@ -24,8 +24,8 @@ MATERIA_COLORS = [
     "#ec4899", "#84cc16", "#06b6d4", "#a855f7", "#ef4444", "#22c55e", "#3b82f6", "#d946ef",
 ]
 
-def _build_color_map(materias):
-    return {m: MATERIA_COLORS[i % len(MATERIA_COLORS)] for i, m in enumerate(materias)}
+def _build_color_map(combinacion):
+    return {opt["nrc"]: MATERIA_COLORS[i % len(MATERIA_COLORS)] for i, opt in enumerate(combinacion)}
 
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {"pdf", "xlsx", "xls"}
@@ -712,8 +712,20 @@ def convertir_horario():
         )
         return redirect(url_for("index"))
 
-    materia_names = sorted(materias.keys())
-    combinacion = [materias[m][0] for m in materia_names]
+    materia_names = []
+    combinacion = []
+    seen_nrcs = set()
+    for m_name in sorted(materias.keys()):
+        for opt in materias[m_name]:
+            nrc = opt.get("nrc", "")
+            if nrc and nrc not in seen_nrcs:
+                seen_nrcs.add(nrc)
+                materia_names.append(m_name)
+                combinacion.append(opt)
+    if not combinacion:
+        flash("No se encontraron cursos validos en el horario.", "error")
+        return redirect(url_for("index"))
+
     horas_clase, horas_permanencia, hora_min_inicio, hora_max_fin = calcular_horas(combinacion)
 
     resultado = {
@@ -734,7 +746,7 @@ def convertir_horario():
             pdf_name=f"Horario: {safe_name}",
             generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
             has_weasyprint=HAS_WEASYPRINT,
-            color_map=_build_color_map(materia_names),
+            color_map=_build_color_map(combinacion),
         )
 
         if HAS_WEASYPRINT:
@@ -883,7 +895,7 @@ def export_schedule_pdf(result_id):
         pdf_name=state.get("pdf_name"),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         has_weasyprint=HAS_WEASYPRINT,
-        color_map=_build_color_map(resultado["materias"]),
+        color_map=_build_color_map(resultado["combinacion"]),
     )
 
     if HAS_WEASYPRINT:

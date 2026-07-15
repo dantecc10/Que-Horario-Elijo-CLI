@@ -197,7 +197,7 @@
 						{% for d in r.vista_semanal.dias %}
 						<td>
 							{% for ev in row.cells[d] %}
-							{% set c = color_map.get(ev.materia, "#0d6b61") %}
+							{% set c = color_map.get(ev.nrc|string, "#0d6b61") %}
 							<div class="event-chip" style="border-left:4px solid {{ c }};background:{{ c }}11">
 								<strong style="color:{{ c }}">{{ ev.materia }}</strong><br/>
 								<span class="ev-meta">NRC {{ ev.nrc }} &middot; {{ ev.profesor }} &middot; {{ ev.salon }}</span>
@@ -229,7 +229,7 @@
 					{% set materia = r.materias[idx] %}
 					{% for h in opcion.horarios %}
 					<tr>
-						<td><span class="badge" style="background:{{ color_map.get(materia, '#0d6b61') }}">{{ materia }}</span></td>
+						<td><span class="badge" style="background:{{ color_map.get(opcion.nrc|string, '#0d6b61') }}">{{ materia }}</span></td>
 						<td>{{ opcion.nrc }}</td>
 						<td>{{ opcion.profesor }}</td>
 						<td>{{ h.dia }}</td>
