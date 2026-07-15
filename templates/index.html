@@ -27,6 +27,15 @@
 			{% endwith %}
 
 			<section class="card">
+				<h2><span class="step">0</span> Convertir mi horario <span class="meta" style="font-weight:400">(opcional)</span></h2>
+				<p class="meta" style="margin-bottom:12px">Ya tienes tu horario desde la plataforma BUAP? Suelo aqui y lo convertimos a nuestro formato.</p>
+				<form action="{{ url_for('convertir_horario') }}" method="post" enctype="multipart/form-data" class="upload-form">
+					<input type="file" name="horario_pdf" accept="application/pdf" required />
+					<button type="submit">Convertir horario</button>
+				</form>
+			</section>
+
+			<section class="card">
 				<h2><span class="step">1</span> Cargar archivo <span class="meta" style="font-weight:400">(PDF o Excel)</span></h2>
 				<form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="upload-form">
 					<input type="file" name="pdf" accept="application/pdf,.xlsx,.xls" required />

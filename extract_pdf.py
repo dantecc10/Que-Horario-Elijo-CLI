@@ -945,6 +945,184 @@ def extraer_pdf_a_excel(pdf_path, excel_path):
     #     print(f"\n❌ Ocurrió un error al guardar el archivo de Excel: {e}")
     #     return False
 
+
+def _parsear_horario_personal(pdf_path):
+    """
+    Parsea un PDF de Horario de Clases personal de BUAP.
+
+    Este formato tiene una tabla con columnas de ancho fijo generada
+    por la plataforma de la universidad. Cada materia puede ocupar
+    1-3 filas (continuaciones con '-').
+
+    Retorna una lista de cursos en formato estándar:
+      {NRC, Clave, Materia, Profesor, Hora de inicio, Hora de fin, Dia, Salon}
+
+    El parser usa pdftotext -layout para preservar el alineamiento
+    de columnas y mapea los rangos de hora a días por posición
+    horizontal de la columna.
+    """
+    import subprocess as _sp
+
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"No se encontro el archivo: {pdf_path}")
+
+    try:
+        result = _sp.run(
+            ["pdftotext", "-layout", pdf_path, "-"],
+            capture_output=True, text=True, timeout=30,
+        )
+        texto = result.stdout
+    except FileNotFoundError:
+        raise RuntimeError(
+            "pdftotext no esta instalado. Instala poppler-utils: "
+            "sudo apt install poppler-utils"
+        )
+    except _sp.TimeoutExpired:
+        raise RuntimeError("pdftotext tardo demasiado al procesar el PDF.")
+
+    if not texto.strip():
+        raise RuntimeError("El PDF no contiene texto extraible.")
+
+    if "HORARIO DE CURSOS" not in texto.upper():
+        raise RuntimeError(
+            "El PDF no parece ser un Horario de Clases de BUAP. "
+            "Se esperaba encontrar 'HORARIO DE CURSOS'."
+        )
+
+    lineas = texto.split("\n")
+
+    hdr_idx = next(
+        (i for i, l in enumerate(lineas)
+         if "CÓDIGO" in l and "PROFESOR" in l),
+        None,
+    )
+    if hdr_idx is None:
+        raise RuntimeError("No se encontro la fila de encabezado de la tabla.")
+
+    data_end = next(
+        (i for i in range(hdr_idx + 1, len(lineas))
+         if lineas[i].strip().startswith("NOTAS")),
+        len(lineas),
+    )
+    data_lines = [
+        l for l in lineas[hdr_idx + 1:data_end]
+        if l.strip() and "TOTAL" not in l
+    ]
+
+    DAY_ZONES = [
+        ("L", 0, 65), ("M", 65, 74), ("X", 74, 83),
+        ("J", 83, 97), ("V", 97, 111), ("S", 111, 118),
+        ("D", 118, 300),
+    ]
+
+    cursos = []
+    curso_actual = None
+
+    for line in data_lines:
+        body = line[16:] if len(line) > 16 else line
+        tokens = body.split()
+        if not tokens:
+            continue
+
+        code_tok = tokens[0]
+        es_nuevo = bool(re.match(r"^[A-Z]{3,6}-\d{3}$", code_tok))
+
+        if es_nuevo:
+            curso_actual = {
+                "code": code_tok, "sec": "", "name": "",
+                "nrc": "", "prof": "",
+            }
+
+            pos_after_code = body.index(code_tok) + len(code_tok)
+            remainder = body[pos_after_code:]
+            sec_m = re.search(r"\b(\d{3})\b", remainder)
+            if sec_m:
+                curso_actual["sec"] = sec_m.group(1)
+
+            name_start = pos_after_code
+            if sec_m:
+                name_start = pos_after_code + sec_m.end()
+            name_part = body[name_start:]
+            name_m = re.match(
+                r"\s*(.+?)(?:\s+\d{4}-\d{4}|\s{10,}|$)", name_part
+            )
+            if name_m:
+                curso_actual["name"] = name_m.group(1).strip()
+
+            cursos.append(curso_actual)
+
+        if not curso_actual:
+            continue
+
+        if len(line) > 158:
+            nrc_v = line[154:159].strip()
+            if nrc_v and nrc_v.isdigit() and len(nrc_v) == 5:
+                curso_actual["nrc"] = nrc_v
+            prof_v = line[159:].strip()
+            if prof_v:
+                curso_actual["prof"] = prof_v
+
+        for tm in re.finditer(r"(\d{4})-(\d{4})", line[:120]):
+            pos = tm.start()
+            for day, lo, hi in DAY_ZONES:
+                if lo <= pos < hi:
+                    curso_actual["nrc"] = curso_actual.get("nrc", "")
+                    curso_actual["prof"] = curso_actual.get("prof", "")
+                    break
+
+    resultados = []
+    for c in cursos:
+        nrc = c.get("nrc", "")
+        if not nrc:
+            continue
+        materia = c["name"]
+        clave = c["code"]
+        profesor = c.get("prof", "") or "SIN PROFESOR"
+
+        curso_lineas = [
+            l for l in data_lines
+            if c["code"] in l or (
+                l.strip().startswith("-") and
+                nrc and nrc in l
+            )
+        ]
+
+        bloques = []
+        for line in curso_lineas:
+            for tm in re.finditer(r"(\d{4})-(\d{4})", line[:120]):
+                pos = tm.start()
+                for day, lo, hi in DAY_ZONES:
+                    if lo <= pos < hi:
+                        bloques.append({
+                            "Dia": day,
+                            "Hora de inicio": tm.group(1),
+                            "Hora de fin": tm.group(2),
+                        })
+                        break
+
+        salon = ""
+        for line in curso_lineas:
+            if len(line) > 146:
+                s = line[141:147].strip()
+                if s:
+                    salon = s
+                    break
+
+        for b in bloques:
+            resultados.append({
+                "NRC": nrc,
+                "Clave": clave,
+                "Materia": materia,
+                "Profesor": profesor,
+                "Hora de inicio": b["Hora de inicio"],
+                "Hora de fin": b["Hora de fin"],
+                "Dia": b["Dia"],
+                "Salon": salon,
+            })
+
+    return resultados
+
+
 # def main():
 #     """
 #     Función principal que orquesta la extracción, selección y exportación usando PyMuPDF.

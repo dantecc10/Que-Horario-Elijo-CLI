@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, make_response, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
-from extract_pdf import calcular_hash_archivo, extraer_cursos_desde_archivo
+from extract_pdf import calcular_hash_archivo, extraer_cursos_desde_archivo, _parsear_horario_personal
 
 load_dotenv()
 
@@ -656,6 +656,80 @@ def load_document(file_uuid):
 
     flash(
         f"Documento cargado: {pdf_name} ({len(materias)} materias disponibles)",
+        "success",
+    )
+    return redirect(url_for("index"))
+
+
+@app.route("/convertir-horario", methods=["POST"])
+def convertir_horario():
+    if "horario_pdf" not in request.files:
+        flash("No se recibio ningun archivo.", "error")
+        return redirect(url_for("index"))
+
+    file = request.files["horario_pdf"]
+    if file.filename == "":
+        flash("Debes seleccionar un archivo.", "error")
+        return redirect(url_for("index"))
+
+    if not file.filename.lower().endswith(".pdf"):
+        flash("Solo se aceptan archivos PDF.", "error")
+        return redirect(url_for("index"))
+
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    safe_name = secure_filename(file.filename)
+    file_uuid = str(uuid.uuid4())
+    save_name = f"{file_uuid}_{safe_name}"
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], save_name)
+    file.save(file_path)
+
+    try:
+        cursos = _parsear_horario_personal(file_path)
+    except Exception as exc:
+        flash(f"No se pudo procesar el horario: {exc}", "error")
+        return redirect(url_for("index"))
+
+    if not cursos:
+        flash(
+            "No se detectaron materias en el horario. "
+            "Verifica que el PDF sea un Horario de Clases de BUAP.",
+            "error",
+        )
+        return redirect(url_for("index"))
+
+    materias = normalizar_cursos_a_materias(cursos)
+    if not materias:
+        flash(
+            f"Se extrajeron {len(cursos)} bloques, pero ninguno paso la validacion.",
+            "error",
+        )
+        return redirect(url_for("index"))
+
+    materias_disponibles = [
+        {"nombre": m, "opciones": len(opciones)}
+        for m, opciones in sorted(materias.items())
+    ]
+
+    _save_state(
+        {
+            "pdf_name": f"Horario: {safe_name}",
+            "file_uuid": file_uuid,
+            "materias": materias,
+            "materias_disponibles": materias_disponibles,
+            "resultados": [],
+            "resultados_totales": 0,
+            "seleccionadas": [],
+            "truncado": False,
+            "uso_subconjuntos": False,
+            "max_materias_logradas": 0,
+            "total_seleccionadas": 0,
+        }
+    )
+
+    _registrar_archivo(file_uuid, safe_name, cursos, materias_disponibles)
+
+    flash(
+        f"Horario convertido: {len(materias)} materias disponibles",
         "success",
     )
     return redirect(url_for("index"))
