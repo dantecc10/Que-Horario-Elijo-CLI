@@ -494,7 +494,7 @@ def index():
         seleccionadas=state.get("seleccionadas", []),
         limite_mostrar=state.get("limite_mostrar", DEFAULT_LIMITE_MOSTRAR),
         filtros_json=json.dumps(filtros_data, ensure_ascii=False),
-        materias_json=json.dumps(materias_raw, ensure_ascii=False),
+        materias_json=json.dumps(json_safe(materias_raw), ensure_ascii=False),
         excluded_profes_json=json.dumps(state.get("excluded_profes", {}), ensure_ascii=False),
         excluded_nrcs_json=json.dumps(state.get("excluded_nrcs", {}), ensure_ascii=False),
         forced_nrcs_json=json.dumps(state.get("forced_nrcs", {}), ensure_ascii=False),
