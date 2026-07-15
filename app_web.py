@@ -304,6 +304,19 @@ def construir_vista_semanal(resultado):
     if len(cortes) < 2:
         return {"dias": dias_orden, "labels": dias_label, "rows": []}
 
+    def _normalizar_corte(t):
+        if t.minute == 59:
+            h = t.hour + 1
+            return time(h, 0) if h < 24 else time(23, 59)
+        return t
+
+    cortes_norm = []
+    for t in cortes:
+        nt = _normalizar_corte(t)
+        if not cortes_norm or cortes_norm[-1] != nt:
+            cortes_norm.append(nt)
+    cortes = cortes_norm
+
     rows = []
     for i in range(len(cortes) - 1):
         ini = cortes[i]
