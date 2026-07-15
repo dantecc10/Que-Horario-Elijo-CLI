@@ -992,10 +992,12 @@ def _parsear_horario_personal(pdf_path):
 
     lineas = texto.split("\n")
 
+    def _normalize(s):
+        return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().upper()
+
     hdr_idx = next(
         (i for i, l in enumerate(lineas)
-         if "CÓDIGO" in unicodedata.normalize("NFKD", l).encode("ascii", "ignore").decode().upper()
-         and "PROFESOR" in l.upper()),
+         if "CODIGO" in _normalize(l) and "PROFESOR" in _normalize(l)),
         None,
     )
     if hdr_idx is None:
@@ -1011,11 +1013,22 @@ def _parsear_horario_personal(pdf_path):
         if l.strip() and "TOTAL" not in l
     ]
 
-    DAY_ZONES = [
-        ("L", 0, 65), ("A", 65, 74), ("M", 74, 83),
-        ("J", 83, 97), ("V", 97, 111), ("S", 111, 118),
-        ("D", 118, 300),
+    DAY_COLS = [
+        ("LUNES", "L"), ("MARTES", "A"), ("MIERCOLES", "M"),
+        ("JUEVES", "J"), ("VIERNES", "V"), ("SABADO", "S"), ("DOMINGO", "D"),
     ]
+    header_line = lineas[hdr_idx]
+    header_norm = unicodedata.normalize("NFKD", header_line).encode("ascii", "ignore").decode().upper()
+    col_starts = []
+    for name, code in DAY_COLS:
+        p = header_norm.find(name)
+        if p >= 0:
+            col_starts.append((code, p))
+    DAY_ZONES = []
+    for i, (code, p) in enumerate(col_starts):
+        left = 0 if i == 0 else (col_starts[i-1][1] + p) // 2
+        right = 999 if i == len(col_starts) - 1 else (p + col_starts[i+1][1]) // 2
+        DAY_ZONES.append((code, left, right))
 
     cursos = []
     curso_actual = None
@@ -1056,12 +1069,11 @@ def _parsear_horario_personal(pdf_path):
         if not curso_actual:
             continue
 
-        if len(line) > 158:
-            nrc_v = line[154:159].strip()
-            if nrc_v and nrc_v.isdigit() and len(nrc_v) == 5:
-                curso_actual["nrc"] = nrc_v
-            prof_v = line[159:].strip()
-            if prof_v:
+        nrc_m = re.search(r"\b(\d{5})\b", line)
+        if nrc_m:
+            curso_actual["nrc"] = nrc_m.group(1)
+            prof_v = line[nrc_m.end():].strip()
+            if prof_v and len(prof_v) > 2:
                 curso_actual["prof"] = prof_v
 
     resultados = []
@@ -1096,10 +1108,14 @@ def _parsear_horario_personal(pdf_path):
 
         salon = ""
         for line in curso_lineas:
-            if len(line) > 146:
-                s = line[141:147].strip()
-                if s:
-                    salon = s
+            nrc_m = re.search(r"\b(\d{5})\b", line)
+            if nrc_m:
+                room_m = re.search(
+                    r"(\d{2,4})\s+\d{1,2}\s+" + re.escape(nrc_m.group(1)),
+                    line,
+                )
+                if room_m:
+                    salon = room_m.group(1)
                     break
 
         for b in bloques:
