@@ -1023,11 +1023,11 @@ def _parsear_horario_personal(pdf_path):
     for name, code in DAY_COLS:
         p = header_norm.find(name)
         if p >= 0:
-            col_starts.append((code, p))
+            col_starts.append((code, p, p + len(name)))
     DAY_ZONES = []
-    for i, (code, p) in enumerate(col_starts):
-        left = 0 if i == 0 else (col_starts[i-1][1] + p) // 2
-        right = 999 if i == len(col_starts) - 1 else (p + col_starts[i+1][1]) // 2
+    for i, (code, start, end_) in enumerate(col_starts):
+        left = 0 if i == 0 else (col_starts[i-1][2] + start) // 2
+        right = 999 if i == len(col_starts) - 1 else (end_ + col_starts[i+1][1]) // 2
         DAY_ZONES.append((code, left, right))
 
     cursos = []
