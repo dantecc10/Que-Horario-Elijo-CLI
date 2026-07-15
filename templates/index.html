@@ -70,21 +70,24 @@
 				<div class="exclusion-filters" id="exclusion-filters">
 					<button type="button" class="exclusion-toggle" id="exclusion-toggle">
 						<span class="exclusion-icon">&#9660;</span>
-						Filtros de exclusi&oacute;n (ahorrar procesamiento)
+						Filtros de exclusi&oacute;n e inclusi&oacute;n forzada
 					</button>
-					<div class="exclusion-body" id="exclusion-body">
+					<div class="exclusion-body open" id="exclusion-body">
 						<p class="meta" style="margin-bottom: 12px;">
-							Excluye profesores o NRCs que ya no tengan disponibilidad. El servidor no generar&aacute; combinaciones con estos elementos, ahorrando tiempo de procesamiento.
+							Excluye profesores/NRCs sin disponibilidad o fuerza NRCs con cupo garantizado.
+							El servidor no generar&aacute; combinaciones inv&aacute;lidas, ahorrando procesamiento.
 						</p>
 
-						<div class="exclusion-tabs">
-							<button type="button" class="exclusion-tab active" data-panel="excl-prof-panel">Profesores</button>
-							<button type="button" class="exclusion-tab" data-panel="excl-nrc-panel">NRCs (Clave de grupo)</button>
+						<div class="exclusion-tabs" id="exclusion-tabs">
+							<button type="button" class="exclusion-tab active" data-panel="excl-prof-panel">Excluir profesores</button>
+							<button type="button" class="exclusion-tab" data-panel="excl-nrc-panel">Excluir NRCs</button>
+							<button type="button" class="exclusion-tab" data-panel="excl-force-panel">Forzar NRCs</button>
 						</div>
 
 						<div class="exclusion-panel active" id="excl-prof-panel">
 							<div class="exclusion-panel-toolbar">
-								<button type="button" class="btn-secondary btn-sm" id="btn-excl-prof-toggle">Toggle seleccionadas</button>
+								<input type="text" class="exclusion-search" id="search-excl-prof" placeholder="Buscar profesor..." autocomplete="off" />
+								<button type="button" class="btn-secondary btn-sm" id="btn-excl-prof-toggle">Desmarcar abiertos</button>
 								<span class="meta" id="excl-prof-count"></span>
 							</div>
 							<div class="exclusion-nested-list" id="exclusion-prof-list"></div>
@@ -92,10 +95,20 @@
 
 						<div class="exclusion-panel" id="excl-nrc-panel">
 							<div class="exclusion-panel-toolbar">
-								<button type="button" class="btn-secondary btn-sm" id="btn-excl-nrc-toggle">Toggle seleccionadas</button>
+								<input type="text" class="exclusion-search" id="search-excl-nrc" placeholder="Buscar NRC..." autocomplete="off" />
+								<button type="button" class="btn-secondary btn-sm" id="btn-excl-nrc-toggle">Desmarcar abiertos</button>
 								<span class="meta" id="excl-nrc-count"></span>
 							</div>
 							<div class="exclusion-nested-list" id="exclusion-nrc-list"></div>
+						</div>
+
+						<div class="exclusion-panel" id="excl-force-panel">
+							<div class="exclusion-panel-toolbar">
+								<input type="text" class="exclusion-search" id="search-excl-force" placeholder="Buscar NRC..." autocomplete="off" />
+								<button type="button" class="btn-secondary btn-sm" id="btn-excl-force-toggle">Desmarcar abiertos</button>
+								<span class="meta" id="excl-force-count"></span>
+							</div>
+							<div class="exclusion-nested-list" id="exclusion-force-list"></div>
 						</div>
 					</div>
 				</div>
@@ -116,6 +129,7 @@
 				</div>
 					<input type="hidden" id="excl-profes-json" name="excl_profes_json" value='{{ excluded_profes_json | safe }}' />
 					<input type="hidden" id="excl-nrcs-json" name="excl_nrcs_json" value='{{ excluded_nrcs_json | safe }}' />
+					<input type="hidden" id="forced-nrcs-json" name="forced_nrcs_json" value='{{ forced_nrcs_json | safe }}' />
 					<button type="submit">Generar horarios</button>
 				</form>
 			</section>
@@ -269,22 +283,26 @@
 			const FILTROS_DATA = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
 			const hiddenProfes = document.getElementById("excl-profes-json");
 			const hiddenNrcs = document.getElementById("excl-nrcs-json");
+			const hiddenForced = document.getElementById("forced-nrcs-json");
 
 			let exclProfes = {};
 			let exclNrcs = {};
+			let forcedNrcs = {};
 			try { exclProfes = JSON.parse(hiddenProfes?.value) || {}; } catch(e) {}
 			try { exclNrcs = JSON.parse(hiddenNrcs?.value) || {}; } catch(e) {}
+			try { forcedNrcs = JSON.parse(hiddenForced?.value) || {}; } catch(e) {}
 
 			function syncHiddenInputs() {
 				if (hiddenProfes) hiddenProfes.value = JSON.stringify(exclProfes);
 				if (hiddenNrcs) hiddenNrcs.value = JSON.stringify(exclNrcs);
+				if (hiddenForced) hiddenForced.value = JSON.stringify(forcedNrcs);
 			}
 
 			function getSelectedSubjects() {
 				return Array.from(document.querySelectorAll('input[name="materias"]:checked')).map(cb => cb.value);
 			}
 
-			function buildNestedList(containerId, dataKey, hiddenStore) {
+			function buildNestedList(containerId, dataKey, hiddenStore, mode) {
 				const container = document.getElementById(containerId);
 				if (!container) return;
 				const selected = getSelectedSubjects();
@@ -295,7 +313,7 @@
 					if (items.length === 0) continue;
 
 					const group = document.createElement("div");
-					group.className = "exclusion-group";
+					group.className = "exclusion-group" + (mode === "inclusion" ? " inclusion-group" : "");
 					group.dataset.materia = materia;
 
 					const header = document.createElement("div");
@@ -304,26 +322,26 @@
 					const toggleBtn = document.createElement("button");
 					toggleBtn.type = "button";
 					toggleBtn.className = "exclusion-group-toggle";
-					toggleBtn.innerHTML = `<span class="exclusion-chevron">&#9654;</span> ${materia} <span class="meta">(${items.length})</span>`;
-					toggleBtn.addEventListener("click", () => {
+					toggleBtn.innerHTML = '<span class="exclusion-chevron">&#9654;</span> ' + materia + ' <span class="meta">(' + items.length + ')</span>';
+					toggleBtn.addEventListener("click", function() {
 						const isOpen = group.classList.toggle("open");
-						toggleBtn.querySelector(".exclusion-chevron").innerHTML = isOpen ? "&#9660;" : "&#9654;";
+						this.querySelector(".exclusion-chevron").innerHTML = isOpen ? "&#9660;" : "&#9654;";
 					});
 
 					const selectAllCb = document.createElement("input");
 					selectAllCb.type = "checkbox";
 					selectAllCb.className = "exclusion-select-all";
-					selectAllCb.title = "Excluir todos de esta materia";
-					const savedExcl = hiddenStore[materia] || [];
-					const allExcluded = items.every(it => savedExcl.includes(it));
-					const someExcluded = items.some(it => savedExcl.includes(it));
-					selectAllCb.checked = allExcluded;
-					selectAllCb.indeterminate = someExcluded && !allExcluded;
-					selectAllCb.addEventListener("change", () => {
-						const checkboxes = group.querySelectorAll(".exclusion-item-cb");
-						checkboxes.forEach(cb => { cb.checked = selectAllCb.checked; });
-						if (selectAllCb.checked) {
-							hiddenStore[materia] = [...items];
+					selectAllCb.title = mode === "inclusion" ? "Forzar todos" : "Excluir todos";
+					const savedItems = hiddenStore[materia] || [];
+					const allMarked = items.every(function(it) { return savedItems.indexOf(it) !== -1; });
+					const someMarked = items.some(function(it) { return savedItems.indexOf(it) !== -1; });
+					selectAllCb.checked = allMarked;
+					selectAllCb.indeterminate = someMarked && !allMarked;
+					selectAllCb.addEventListener("change", function() {
+						const cbs = group.querySelectorAll(".exclusion-item-cb");
+						for (let i = 0; i < cbs.length; i++) cbs[i].checked = this.checked;
+						if (this.checked) {
+							hiddenStore[materia] = items.slice();
 						} else {
 							delete hiddenStore[materia];
 						}
@@ -338,27 +356,31 @@
 					const list = document.createElement("div");
 					list.className = "exclusion-group-items";
 
-					for (const item of items) {
+					for (let i = 0; i < items.length; i++) {
+						const item = items[i];
 						const label = document.createElement("label");
 						label.className = "exclusion-item";
 						const cb = document.createElement("input");
 						cb.type = "checkbox";
 						cb.className = "exclusion-item-cb";
 						cb.value = item;
-						cb.checked = savedExcl.includes(item);
-						cb.addEventListener("change", () => {
+						cb.checked = savedItems.indexOf(item) !== -1;
+						cb.addEventListener("change", function() {
 							if (!hiddenStore[materia]) hiddenStore[materia] = [];
-							if (cb.checked) {
-								if (!hiddenStore[materia].includes(item)) hiddenStore[materia].push(item);
+							if (this.checked) {
+								if (hiddenStore[materia].indexOf(item) === -1) hiddenStore[materia].push(item);
 							} else {
-								hiddenStore[materia] = hiddenStore[materia].filter(v => v !== item);
+								hiddenStore[materia] = hiddenStore[materia].filter(function(v) { return v !== item; });
 								if (hiddenStore[materia].length === 0) delete hiddenStore[materia];
 							}
 							const groupCbs = group.querySelectorAll(".exclusion-item-cb");
-							const allChecked = Array.from(groupCbs).every(c => c.checked);
-							const someChecked = Array.from(groupCbs).some(c => c.checked);
-							selectAllCb.checked = allChecked;
-							selectAllCb.indeterminate = someChecked && !allChecked;
+							let allC = true, someC = false;
+							for (let j = 0; j < groupCbs.length; j++) {
+								if (!groupCbs[j].checked) allC = false;
+								if (groupCbs[j].checked) someC = true;
+							}
+							selectAllCb.checked = allC;
+							selectAllCb.indeterminate = someC && !allC;
 							syncHiddenInputs();
 							updateCounts();
 						});
@@ -372,77 +394,110 @@
 				}
 			}
 
+			function setupSearch(inputId, containerId) {
+				const input = document.getElementById(inputId);
+				const container = document.getElementById(containerId);
+				if (!input || !container) return;
+				input.addEventListener("input", function() {
+					const q = this.value.toLowerCase().trim();
+					const groups = container.querySelectorAll(".exclusion-group");
+					for (let i = 0; i < groups.length; i++) {
+						const group = groups[i];
+						const items = group.querySelectorAll(".exclusion-item");
+						let hasMatch = false;
+						for (let j = 0; j < items.length; j++) {
+							const text = items[j].textContent.toLowerCase();
+							const match = !q || text.indexOf(q) !== -1;
+							items[j].style.display = match ? "" : "none";
+							if (match) hasMatch = true;
+						}
+						group.style.display = hasMatch ? "" : "none";
+						if (q && hasMatch) group.classList.add("open");
+					}
+				});
+			}
+
 			function updateCounts() {
-				let totalProf = 0, totalNrc = 0;
+				let totalProf = 0, totalNrc = 0, totalForce = 0;
 				for (const m in exclProfes) totalProf += exclProfes[m].length;
 				for (const m in exclNrcs) totalNrc += exclNrcs[m].length;
+				for (const m in forcedNrcs) totalForce += forcedNrcs[m].length;
 				const pc = document.getElementById("excl-prof-count");
 				const nc = document.getElementById("excl-nrc-count");
-				if (pc) pc.textContent = totalProf > 0 ? `${totalProf} excluidos` : "";
-				if (nc) nc.textContent = totalNrc > 0 ? `${totalNrc} excluidos` : "";
+				const fc = document.getElementById("excl-force-count");
+				if (pc) pc.textContent = totalProf > 0 ? totalProf + " excluidos" : "";
+				if (nc) nc.textContent = totalNrc > 0 ? totalNrc + " excluidos" : "";
+				if (fc) fc.textContent = totalForce > 0 ? totalForce + " forzados" : "";
 			}
 
 			function rebuildAll() {
-				buildNestedList("exclusion-prof-list", "profesores", exclProfes);
-				buildNestedList("exclusion-nrc-list", "nrcs", exclNrcs);
+				const searchProf = document.getElementById("search-excl-prof");
+				const searchNrc = document.getElementById("search-excl-nrc");
+				const searchForce = document.getElementById("search-excl-force");
+				if (searchProf) searchProf.value = "";
+				if (searchNrc) searchNrc.value = "";
+				if (searchForce) searchForce.value = "";
+
+				buildNestedList("exclusion-prof-list", "profesores", exclProfes, "exclusion");
+				buildNestedList("exclusion-nrc-list", "nrcs", exclNrcs, "exclusion");
+				buildNestedList("exclusion-force-list", "nrcs", forcedNrcs, "inclusion");
 				updateCounts();
 			}
 
-			// Toggle exclusion section
 			const toggleBtn = document.getElementById("exclusion-toggle");
 			const exclBody = document.getElementById("exclusion-body");
 			if (toggleBtn && exclBody) {
-				toggleBtn.addEventListener("click", () => {
+				toggleBtn.addEventListener("click", function() {
 					const isOpen = exclBody.classList.toggle("open");
-					toggleBtn.querySelector(".exclusion-icon").innerHTML = isOpen ? "&#9650;" : "&#9660;";
+					this.querySelector(".exclusion-icon").innerHTML = isOpen ? "&#9650;" : "&#9660;";
 				});
 			}
 
-			// Tab switching
-			document.querySelectorAll(".exclusion-tab").forEach(tab => {
-				tab.addEventListener("click", () => {
-					document.querySelectorAll(".exclusion-tab").forEach(t => t.classList.remove("active"));
-					document.querySelectorAll(".exclusion-panel").forEach(p => p.classList.remove("active"));
+			const tabContainer = document.getElementById("exclusion-tabs");
+			if (tabContainer) {
+				tabContainer.addEventListener("click", function(e) {
+					const tab = e.target.closest(".exclusion-tab");
+					if (!tab) return;
+					const allTabs = tabContainer.querySelectorAll(".exclusion-tab");
+					for (let i = 0; i < allTabs.length; i++) allTabs[i].classList.remove("active");
 					tab.classList.add("active");
+					const panels = document.querySelectorAll(".exclusion-panel");
+					for (let i = 0; i < panels.length; i++) panels[i].classList.remove("active");
 					const panel = document.getElementById(tab.dataset.panel);
 					if (panel) panel.classList.add("active");
 				});
-			});
+			}
 
-			// Toggle selected for profes
-			const btnExclProfToggle = document.getElementById("btn-excl-prof-toggle");
-			if (btnExclProfToggle) {
-				btnExclProfToggle.addEventListener("click", () => {
-					document.querySelectorAll("#exclusion-prof-list .exclusion-group.open .exclusion-item-cb").forEach(cb => {
-						if (cb.checked) {
-							cb.checked = false;
-							cb.dispatchEvent(new Event("change"));
+			function setupDesmarcar(btnId, listId) {
+				const btn = document.getElementById(btnId);
+				if (!btn) return;
+				btn.addEventListener("click", function() {
+					const cbs = document.querySelectorAll("#" + listId + " .exclusion-group.open .exclusion-item-cb");
+					for (let i = 0; i < cbs.length; i++) {
+						if (cbs[i].checked) {
+							cbs[i].checked = false;
+							cbs[i].dispatchEvent(new Event("change"));
 						}
-					});
+					}
 				});
 			}
 
-			// Toggle selected for NRCs
-			const btnExclNrcToggle = document.getElementById("btn-excl-nrc-toggle");
-			if (btnExclNrcToggle) {
-				btnExclNrcToggle.addEventListener("click", () => {
-					document.querySelectorAll("#exclusion-nrc-list .exclusion-group.open .exclusion-item-cb").forEach(cb => {
-						if (cb.checked) {
-							cb.checked = false;
-							cb.dispatchEvent(new Event("change"));
-						}
-					});
-				});
-			}
+			setupDesmarcar("btn-excl-prof-toggle", "exclusion-prof-list");
+			setupDesmarcar("btn-excl-nrc-toggle", "exclusion-nrc-list");
+			setupDesmarcar("btn-excl-force-toggle", "exclusion-force-list");
 
-			// Rebuild when subject selection changes
-			document.querySelectorAll('input[name="materias"]').forEach(cb => {
+			setupSearch("search-excl-prof", "exclusion-prof-list");
+			setupSearch("search-excl-nrc", "exclusion-nrc-list");
+			setupSearch("search-excl-force", "exclusion-force-list");
+
+			document.querySelectorAll('input[name="materias"]').forEach(function(cb) {
 				cb.addEventListener("change", rebuildAll);
 			});
-			document.getElementById("btn-select-all")?.addEventListener("click", () => setTimeout(rebuildAll, 10));
-			document.getElementById("btn-deselect-all")?.addEventListener("click", () => setTimeout(rebuildAll, 10));
+			const btnAll = document.getElementById("btn-select-all");
+			const btnNone = document.getElementById("btn-deselect-all");
+			if (btnAll) btnAll.addEventListener("click", function() { setTimeout(rebuildAll, 10); });
+			if (btnNone) btnNone.addEventListener("click", function() { setTimeout(rebuildAll, 10); });
 
-			// Initial build
 			if (Object.keys(FILTROS_DATA).length > 0) {
 				rebuildAll();
 			}

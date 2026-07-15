@@ -1117,6 +1117,25 @@ tr:not(.weekly-table tr):hover td {
     align-items: center;
     gap: 10px;
     margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.exclusion-search {
+    flex: 1;
+    min-width: 160px;
+    padding: 7px 12px;
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-family: inherit;
+    background: #fff;
+    transition: border-color var(--transition);
+}
+
+.exclusion-search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(13, 107, 97, 0.1);
 }
 
 .exclusion-nested-list {
@@ -1234,6 +1253,27 @@ tr:not(.weekly-table tr):hover td {
     margin: 0;
     cursor: pointer;
     flex-shrink: 0;
+}
+
+.inclusion-group .exclusion-group-header {
+    background: #f0faf4;
+}
+
+.inclusion-group .exclusion-group-header:hover {
+    background: #e2f5eb;
+}
+
+.inclusion-group .exclusion-group-header input[type="checkbox"] {
+    accent-color: var(--success);
+}
+
+.inclusion-group .exclusion-item:has(input:checked) {
+    background: #f0fdf4;
+    color: var(--success);
+}
+
+.inclusion-group .exclusion-item input[type="checkbox"] {
+    accent-color: var(--success);
 }
 
 /* ─── Print ─── */

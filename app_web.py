@@ -393,15 +393,18 @@ def generar_horarios(materias_seleccionadas, min_materias=3, max_materias=None):
     return resultados, truncado, uso_subconjuntos, max_materias_logradas
 
 
-def aplicar_filtros_previos(materias, excluded_profes=None, excluded_nrcs=None):
+def aplicar_filtros_previos(materias, excluded_profes=None, excluded_nrcs=None, forced_nrcs=None):
     """Filtra opciones de materias antes de generar combinaciones.
 
     excluded_profes / excluded_nrcs:
-        dict con clave = nombre de materia (o "_global" para todas),
-        valor = lista de nombres de profesores / NRCs a excluir.
+        dict materia -> lista de valores a excluir ("_global" aplica a todas).
+    forced_nrcs:
+        dict materia -> lista de NRCs a forzar. Si una materia tiene forzados,
+        solo se mantienen opciones con esos NRCs.
     """
     excluded_profes = excluded_profes or {}
     excluded_nrcs = excluded_nrcs or {}
+    forced_nrcs = forced_nrcs or {}
 
     resultado = {}
     for materia, opciones in materias.items():
@@ -419,6 +422,10 @@ def aplicar_filtros_previos(materias, excluded_profes=None, excluded_nrcs=None):
                 continue
 
             filtradas.append(opcion)
+
+        forced = forced_nrcs.get(materia, []) or forced_nrcs.get("_global", [])
+        if forced:
+            filtradas = [op for op in filtradas if op.get("nrc") in forced]
 
         if filtradas:
             resultado[materia] = filtradas
@@ -489,6 +496,7 @@ def index():
         filtros_json=json.dumps(filtros_data, ensure_ascii=False),
         excluded_profes_json=json.dumps(state.get("excluded_profes", {}), ensure_ascii=False),
         excluded_nrcs_json=json.dumps(state.get("excluded_nrcs", {}), ensure_ascii=False),
+        forced_nrcs_json=json.dumps(state.get("forced_nrcs", {}), ensure_ascii=False),
     )
 
 
@@ -676,6 +684,7 @@ def generate():
     # --- Filtros de exclusión anidados ---
     excluded_profes = {}
     excluded_nrcs = {}
+    forced_nrcs = {}
 
     excl_profes_json = request.form.get("excl_profes_json", "")
     if excl_profes_json:
@@ -695,10 +704,19 @@ def generate():
         except (json.JSONDecodeError, TypeError):
             pass
 
-    if excluded_profes or excluded_nrcs:
+    forced_nrcs_json = request.form.get("forced_nrcs_json", "")
+    if forced_nrcs_json:
+        try:
+            raw = json.loads(forced_nrcs_json)
+            for materia, items in raw.items():
+                forced_nrcs[materia] = [n for n in items if n]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if excluded_profes or excluded_nrcs or forced_nrcs:
         antes = sum(len(v) for v in materias_filtradas.values())
         materias_filtradas = aplicar_filtros_previos(
-            materias_filtradas, excluded_profes, excluded_nrcs
+            materias_filtradas, excluded_profes, excluded_nrcs, forced_nrcs
         )
         despues = sum(len(v) for v in materias_filtradas.values())
         if antes != despues:
@@ -737,6 +755,7 @@ def generate():
     state["max_materias"] = max_materias
     state["excluded_profes"] = excluded_profes
     state["excluded_nrcs"] = excluded_nrcs
+    state["forced_nrcs"] = forced_nrcs
     _save_state(state)
 
     if not resultados:
