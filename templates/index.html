@@ -148,10 +148,18 @@
 								<h3>Mi horario</h3>
 								<div class="manual-schedule-info">
 									<span id="manual-info-text" class="meta">Selecciona materias a la derecha</span>
+									<button type="button" class="btn-secondary btn-sm" id="manual-suggest-btn">Sugerir materias</button>
 									<button type="button" class="btn-secondary btn-sm" id="manual-clear-all">Limpiar todo</button>
 								</div>
 							</div>
 							<div class="manual-schedule" id="manual-schedule"></div>
+							<div class="manual-suggestions" id="manual-suggestions" style="display:none">
+								<div class="suggest-header">
+									<h4>Sugerencias que encajan en tu horario</h4>
+									<button type="button" class="btn-secondary btn-sm" id="suggest-close">&times;</button>
+								</div>
+								<div id="suggest-list"></div>
+							</div>
 						</div>
 						<div class="manual-panel">
 							<div class="manual-panel-header">
@@ -195,6 +203,10 @@
 						<div class="filter-group">
 							<label for="filter-materias-max">Materias (max):</label>
 							<input type="number" id="filter-materias-max" value="" min="1" placeholder="-" />
+						</div>
+						<div class="filter-group">
+							<label for="filter-nrc">NRC:</label>
+							<input type="text" id="filter-nrc" placeholder="ej. 30013" autocomplete="off" />
 						</div>
 						<div class="filter-group">
 							<label for="filter-hora-inicio">Hora inicio:</label>
@@ -282,6 +294,7 @@
 
 		<script id="resultados-data" type="application/json">{{ resultados_json | safe }}</script>
 		<script id="filtros-data" type="application/json">{{ filtros_json | safe }}</script>
+		<script id="materias-data" type="application/json">{{ materias_json | safe }}</script>
 
 		<script>
 		async function loadRecentDocuments() {
@@ -314,7 +327,7 @@
 
 		<script>
 		(() => {
-			const FILTROS = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
+			const FILTROS = JSON.parse(document.getElementById("materias-data")?.textContent || "{}");
 			const DAYS = ["L","M","X","J","V","S","D"];
 			const DAY_NAMES = {L:"Lunes",M:"Martes",X:"Miercoles",J:"Jueves",V:"Viernes",S:"Sabado",D:"Domingo"};
 			const COLORS = ["#0ea5e9","#8b5cf6","#f97316","#10b981","#e11d48","#6366f1","#14b8a6","#f59e0b","#ec4899","#84cc16","#06b6d4","#a855f7","#ef4444","#22c55e","#3b82f6","#d946ef"];
@@ -589,6 +602,113 @@
 					renderSchedule();
 					renderSubjects(document.getElementById("manual-search")?.value || "");
 					renderSelectedList();
+					var sugEl = document.getElementById("manual-suggestions");
+					if (sugEl) sugEl.style.display = "none";
+				});
+			}
+
+			// --- Suggestions ---
+			function generateSuggestions() {
+				var sugEl = document.getElementById("manual-suggestions");
+				var sugList = document.getElementById("suggest-list");
+				if (!sugEl || !sugList) return;
+
+				var currentMaterias = Object.keys(selections);
+				if (currentMaterias.length === 0) {
+					sugList.innerHTML = '<div class="suggest-empty">Primero selecciona una o mas materias para recibir sugerencias.</div>';
+					sugEl.style.display = "";
+					return;
+				}
+
+				var allCurrentBlocks = [];
+				for (var m in selections) {
+					var op = selections[m];
+					for (var i = 0; i < op.horarios.length; i++) {
+						allCurrentBlocks.push(op.horarios[i]);
+					}
+				}
+
+				var suggestions = [];
+				var materias = Object.keys(FILTROS);
+				for (var mi = 0; mi < materias.length; mi++) {
+					var materia = materias[mi];
+					if (selections[materia]) continue;
+
+					var options = FILTROS[materia];
+					for (var oi = 0; oi < options.length; oi++) {
+						var opt = options[oi];
+						var conflict = false;
+						for (var bi = 0; bi < allCurrentBlocks.length; bi++) {
+							if (hasConflict(opt.horarios, [allCurrentBlocks[bi]])) { conflict = true; break; }
+						}
+						if (conflict) continue;
+
+						var totalMin = 0;
+						for (var hi = 0; hi < opt.horarios.length; hi++) {
+							totalMin += timeToMin(opt.horarios[hi].fin) - timeToMin(opt.horarios[hi].inicio);
+						}
+						suggestions.push({ materia: materia, option: opt, hours: totalMin });
+					}
+				}
+
+				suggestions.sort(function(a, b) { return b.hours - a.hours; });
+				suggestions = suggestions.slice(0, 30);
+
+				if (suggestions.length === 0) {
+					sugList.innerHTML = '<div class="suggest-empty">No se encontraron materias que encajen en los huecos disponibles.</div>';
+				} else {
+					var html = "";
+					for (var si = 0; si < suggestions.length; si++) {
+						var s = suggestions[si];
+						var opt = s.option;
+						var sched = [];
+						for (var hi = 0; hi < opt.horarios.length; hi++) {
+							var bl = opt.horarios[hi];
+							sched.push(DAY_NAMES[bl.dia] + " " + bl.inicio + "-" + bl.fin);
+						}
+						var h = Math.floor(s.hours / 60);
+						var mn = s.hours % 60;
+						var hStr = (h > 0 ? h + "h" : "") + (mn > 0 ? mn + "min" : "");
+
+						html += '<div class="suggest-card">';
+						html += '<div class="suggest-info">';
+						html += '<div class="suggest-mat">' + s.materia + '</div>';
+						html += '<div class="suggest-nrc">NRC ' + opt.nrc + ' &middot; ' + opt.profesor + '</div>';
+						html += '<div class="suggest-schedule">' + sched.join(" &middot; ") + '</div>';
+						html += '</div>';
+						html += '<div class="suggest-hours">' + hStr + '</div>';
+						html += '<button type="button" class="suggest-add" onclick="window._manualAddSuggestion(\'' + s.materia.replace(/'/g, "\\'") + '\',\'' + opt.nrc + '\')">+</button>';
+						html += '</div>';
+					}
+					sugList.innerHTML = html;
+				}
+				sugEl.style.display = "";
+			}
+
+			window._manualAddSuggestion = function(materia, nrc) {
+				var opt = FILTROS[materia].find(function(o) { return o.nrc === nrc; });
+				if (!opt) return;
+				selections[materia] = opt;
+				colorMap = {};
+				colorIdx = 0;
+				renderSchedule();
+				renderSubjects(document.getElementById("manual-search")?.value || "");
+				renderSelectedList();
+				generateSuggestions();
+			};
+
+			var suggestBtn = document.getElementById("manual-suggest-btn");
+			if (suggestBtn) {
+				suggestBtn.addEventListener("click", function() {
+					generateSuggestions();
+				});
+			}
+
+			var suggestClose = document.getElementById("suggest-close");
+			if (suggestClose) {
+				suggestClose.addEventListener("click", function() {
+					var sugEl = document.getElementById("manual-suggestions");
+					if (sugEl) sugEl.style.display = "none";
 				});
 			}
 		})();
@@ -1024,6 +1144,7 @@
 				const materiasMax = document.getElementById("filter-materias-max").value;
 				const horaInicio = document.getElementById("filter-hora-inicio").value;
 				const horaFin = document.getElementById("filter-hora-fin").value;
+				const nrc = document.getElementById("filter-nrc").value.trim();
 
 				const allItems = ALL_RESULTS.filter(r => !r.es_individual);
 				let filtered = allItems.filter(r => {
@@ -1032,6 +1153,7 @@
 					if (materias.length > 0 && !materias.some(m => r.materias.includes(m))) return false;
 					if (profesIncluir.length > 0 && !profesIncluir.some(p => r.combinacion.some(o => o.profesor === p))) return false;
 					if (profesExcluir.length > 0 && profesExcluir.some(p => r.combinacion.some(o => o.profesor === p))) return false;
+					if (nrc && !r.combinacion.some(o => o.nrc && o.nrc.indexOf(nrc) !== -1)) return false;
 					if (horaInicio && r.hora_min_inicio < horaInicio) return false;
 					if (horaFin && r.hora_max_fin > horaFin) return false;
 					return true;
@@ -1306,7 +1428,7 @@
 				applyFiltersAndSort();
 
 				// Filter events
-				const filterIds = ["filter-materias-min","filter-materias-max","filter-hora-inicio","filter-hora-fin"];
+				const filterIds = ["filter-materias-min","filter-materias-max","filter-nrc","filter-hora-inicio","filter-hora-fin"];
 				filterIds.forEach(id => document.getElementById(id).addEventListener("input", applyFiltersAndSort));
 				document.getElementById("filter-materia").addEventListener("change", () => { rebuildProfesorFilters(); applyFiltersAndSort(); });
 				document.getElementById("filter-profesor-incluir").addEventListener("change", applyFiltersAndSort);
@@ -1321,6 +1443,7 @@
 					document.querySelectorAll("#filter-materia input, #filter-profesor-incluir input, #filter-profesor-excluir input").forEach(cb => cb.checked = false);
 					document.getElementById("filter-materias-min").value = "";
 					document.getElementById("filter-materias-max").value = "";
+					document.getElementById("filter-nrc").value = "";
 					document.getElementById("filter-hora-inicio").value = "";
 					document.getElementById("filter-hora-fin").value = "";
 					sortCriteria = [{ field: "id", dir: "asc" }];
