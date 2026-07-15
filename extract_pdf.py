@@ -983,7 +983,8 @@ def _parsear_horario_personal(pdf_path):
     if not texto.strip():
         raise RuntimeError("El PDF no contiene texto extraible.")
 
-    if "HORARIO DE CURSOS" not in texto.upper():
+    texto_norm = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode().upper()
+    if "HORARIO DE CURSOS" not in texto_norm:
         raise RuntimeError(
             "El PDF no parece ser un Horario de Clases de BUAP. "
             "Se esperaba encontrar 'HORARIO DE CURSOS'."
@@ -993,7 +994,8 @@ def _parsear_horario_personal(pdf_path):
 
     hdr_idx = next(
         (i for i, l in enumerate(lineas)
-         if "CÓDIGO" in l and "PROFESOR" in l),
+         if "CÓDIGO" in unicodedata.normalize("NFKD", l).encode("ascii", "ignore").decode().upper()
+         and "PROFESOR" in l.upper()),
         None,
     )
     if hdr_idx is None:
@@ -1010,7 +1012,7 @@ def _parsear_horario_personal(pdf_path):
     ]
 
     DAY_ZONES = [
-        ("L", 0, 65), ("M", 65, 74), ("X", 74, 83),
+        ("L", 0, 65), ("A", 65, 74), ("M", 74, 83),
         ("J", 83, 97), ("V", 97, 111), ("S", 111, 118),
         ("D", 118, 300),
     ]
@@ -1025,7 +1027,7 @@ def _parsear_horario_personal(pdf_path):
             continue
 
         code_tok = tokens[0]
-        es_nuevo = bool(re.match(r"^[A-Z]{3,6}-\d{3}$", code_tok))
+        es_nuevo = bool(re.match(r"^[A-Z]{3,6}-\d{3}$", code_tok, re.IGNORECASE))
 
         if es_nuevo:
             curso_actual = {
@@ -1061,14 +1063,6 @@ def _parsear_horario_personal(pdf_path):
             prof_v = line[159:].strip()
             if prof_v:
                 curso_actual["prof"] = prof_v
-
-        for tm in re.finditer(r"(\d{4})-(\d{4})", line[:120]):
-            pos = tm.start()
-            for day, lo, hi in DAY_ZONES:
-                if lo <= pos < hi:
-                    curso_actual["nrc"] = curso_actual.get("nrc", "")
-                    curso_actual["prof"] = curso_actual.get("prof", "")
-                    break
 
     resultados = []
     for c in cursos:

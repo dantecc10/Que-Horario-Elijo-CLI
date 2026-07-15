@@ -678,9 +678,8 @@ def convertir_horario():
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     safe_name = secure_filename(file.filename)
-    file_uuid = str(uuid.uuid4())
-    save_name = f"{file_uuid}_{safe_name}"
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], save_name)
+    tmp_name = f"{uuid.uuid4()}_{safe_name}"
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], tmp_name)
     file.save(file_path)
 
     try:
@@ -705,34 +704,45 @@ def convertir_horario():
         )
         return redirect(url_for("index"))
 
-    materias_disponibles = [
-        {"nombre": m, "opciones": len(opciones)}
-        for m, opciones in sorted(materias.items())
-    ]
+    materia_names = sorted(materias.keys())
+    combinacion = [materias[m][0] for m in materia_names]
+    horas_clase, horas_permanencia, hora_min_inicio, hora_max_fin = calcular_horas(combinacion)
 
-    _save_state(
-        {
-            "pdf_name": f"Horario: {safe_name}",
-            "file_uuid": file_uuid,
-            "materias": materias,
-            "materias_disponibles": materias_disponibles,
-            "resultados": [],
-            "resultados_totales": 0,
-            "seleccionadas": [],
-            "truncado": False,
-            "uso_subconjuntos": False,
-            "max_materias_logradas": 0,
-            "total_seleccionadas": 0,
-        }
-    )
+    resultado = {
+        "id": 1,
+        "materias": materia_names,
+        "combinacion": combinacion,
+        "horas_clase": horas_clase,
+        "horas_permanencia": horas_permanencia,
+        "hora_min_inicio": hora_min_inicio,
+        "hora_max_fin": hora_max_fin,
+    }
+    resultado["vista_semanal"] = construir_vista_semanal(resultado)
 
-    _registrar_archivo(file_uuid, safe_name, cursos, materias_disponibles)
+    try:
+        html = render_template(
+            "export_schedule.html",
+            r=resultado,
+            pdf_name=f"Horario: {safe_name}",
+            generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            has_weasyprint=HAS_WEASYPRINT,
+        )
 
-    flash(
-        f"Horario convertido: {len(materias)} materias disponibles",
-        "success",
-    )
-    return redirect(url_for("index"))
+        if HAS_WEASYPRINT:
+            pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf(
+                presentational_hints=True,
+            )
+            response = make_response(pdf_bytes)
+            response.headers["Content-Type"] = "application/pdf"
+            response.headers["Content-Disposition"] = f'attachment; filename="mi_horario.pdf"'
+            return response
+
+        return html
+    finally:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
 
 
 @app.route("/generate", methods=["POST"])
