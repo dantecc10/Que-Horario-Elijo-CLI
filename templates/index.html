@@ -46,92 +46,126 @@
 			{% if materias_disponibles %}
 			<section class="card">
 				<h2><span class="step">2</span> Seleccionar materias <span id="selected-count" class="meta"></span></h2>
-				<div class="step-toolbar">
-					<button type="button" id="btn-select-all" class="btn-secondary">Seleccionar todas</button>
-					<button type="button" id="btn-deselect-all" class="btn-secondary">Deseleccionar todas</button>
-					<button type="button" id="btn-load-last" class="btn-secondary" style="display:none">Cargar ultima seleccion</button>
-				</div>
-				<div id="last-selection-info" class="meta" style="display:none; margin-bottom: 0.5rem;"></div>
-				<form action="{{ url_for('generate') }}" method="post">
-					<div class="subjects-grid">
-						{% for m in materias_disponibles %}
-						<label class="subject-item">
-							<span class="subject-check">
-								<input type="checkbox" name="materias" value="{{ m.nombre }}" {% if m.nombre in seleccionadas %}checked{% endif %} />
-							</span>
-							<span class="subject-body">
-								<span class="subject-name">{{ m.nombre }}</span>
-								<span class="subject-meta">{{ m.opciones }} NRC</span>
-							</span>
-						</label>
-						{% endfor %}
+
+				<div class="mode-toggle" id="mode-toggle">
+					<button type="button" class="mode-btn active" data-mode="auto">Generar combinaciones</button>
+					<button type="button" class="mode-btn" data-mode="manual">Construir manualmente</button>
 				</div>
 
-				<div class="exclusion-filters" id="exclusion-filters">
-					<button type="button" class="exclusion-toggle" id="exclusion-toggle">
-						<span class="exclusion-icon">&#9660;</span>
-						Filtros de exclusi&oacute;n e inclusi&oacute;n forzada
-					</button>
-					<div class="exclusion-body open" id="exclusion-body">
-						<p class="meta" style="margin-bottom: 12px;">
-							Excluye profesores/NRCs sin disponibilidad o fuerza NRCs con cupo garantizado.
-							El servidor no generar&aacute; combinaciones inv&aacute;lidas, ahorrando procesamiento.
-						</p>
-
-						<div class="exclusion-tabs" id="exclusion-tabs">
-							<button type="button" class="exclusion-tab active" data-panel="excl-prof-panel">Excluir profesores</button>
-							<button type="button" class="exclusion-tab" data-panel="excl-nrc-panel">Excluir NRCs</button>
-							<button type="button" class="exclusion-tab" data-panel="excl-force-panel">Forzar NRCs</button>
+				<div id="mode-auto">
+					<div class="step-toolbar">
+						<button type="button" id="btn-select-all" class="btn-secondary">Seleccionar todas</button>
+						<button type="button" id="btn-deselect-all" class="btn-secondary">Deseleccionar todas</button>
+						<button type="button" id="btn-load-last" class="btn-secondary" style="display:none">Cargar ultima seleccion</button>
+					</div>
+					<div id="last-selection-info" class="meta" style="display:none; margin-bottom: 0.5rem;"></div>
+					<form action="{{ url_for('generate') }}" method="post">
+						<div class="subjects-grid">
+							{% for m in materias_disponibles %}
+							<label class="subject-item">
+								<span class="subject-check">
+									<input type="checkbox" name="materias" value="{{ m.nombre }}" {% if m.nombre in seleccionadas %}checked{% endif %} />
+								</span>
+								<span class="subject-body">
+									<span class="subject-name">{{ m.nombre }}</span>
+									<span class="subject-meta">{{ m.opciones }} NRC</span>
+								</span>
+							</label>
+							{% endfor %}
 						</div>
 
-						<div class="exclusion-panel active" id="excl-prof-panel">
-							<div class="exclusion-panel-toolbar">
-								<input type="text" class="exclusion-search" id="search-excl-prof" placeholder="Buscar profesor..." autocomplete="off" />
-								<button type="button" class="btn-secondary btn-sm" id="btn-excl-prof-toggle">Desmarcar abiertos</button>
-								<span class="meta" id="excl-prof-count"></span>
+						<div class="exclusion-filters" id="exclusion-filters">
+							<button type="button" class="exclusion-toggle" id="exclusion-toggle">
+								<span class="exclusion-icon">&#9660;</span>
+								Filtros de exclusi&oacute;n e inclusi&oacute;n forzada
+							</button>
+							<div class="exclusion-body open" id="exclusion-body">
+								<p class="meta" style="margin-bottom: 12px;">
+									Excluye profesores/NRCs sin disponibilidad o fuerza NRCs con cupo garantizado.
+									El servidor no generar&aacute; combinaciones inv&aacute;lidas, ahorrando procesamiento.
+								</p>
+
+								<div class="exclusion-tabs" id="exclusion-tabs">
+									<button type="button" class="exclusion-tab active" data-panel="excl-prof-panel">Excluir profesores</button>
+									<button type="button" class="exclusion-tab" data-panel="excl-nrc-panel">Excluir NRCs</button>
+									<button type="button" class="exclusion-tab" data-panel="excl-force-panel">Forzar NRCs</button>
+								</div>
+
+								<div class="exclusion-panel active" id="excl-prof-panel">
+									<div class="exclusion-panel-toolbar">
+										<input type="text" class="exclusion-search" id="search-excl-prof" placeholder="Buscar profesor..." autocomplete="off" />
+										<button type="button" class="btn-secondary btn-sm" id="btn-excl-prof-toggle">Desmarcar abiertos</button>
+										<span class="meta" id="excl-prof-count"></span>
+									</div>
+									<div class="exclusion-nested-list" id="exclusion-prof-list"></div>
+								</div>
+
+								<div class="exclusion-panel" id="excl-nrc-panel">
+									<div class="exclusion-panel-toolbar">
+										<input type="text" class="exclusion-search" id="search-excl-nrc" placeholder="Buscar NRC..." autocomplete="off" />
+										<button type="button" class="btn-secondary btn-sm" id="btn-excl-nrc-toggle">Desmarcar abiertos</button>
+										<span class="meta" id="excl-nrc-count"></span>
+									</div>
+									<div class="exclusion-nested-list" id="exclusion-nrc-list"></div>
+								</div>
+
+								<div class="exclusion-panel" id="excl-force-panel">
+									<div class="exclusion-panel-toolbar">
+										<input type="text" class="exclusion-search" id="search-excl-force" placeholder="Buscar NRC..." autocomplete="off" />
+										<button type="button" class="btn-secondary btn-sm" id="btn-excl-force-toggle">Desmarcar abiertos</button>
+										<span class="meta" id="excl-force-count"></span>
+									</div>
+									<div class="exclusion-nested-list" id="exclusion-force-list"></div>
+								</div>
 							</div>
-							<div class="exclusion-nested-list" id="exclusion-prof-list"></div>
 						</div>
 
-						<div class="exclusion-panel" id="excl-nrc-panel">
-							<div class="exclusion-panel-toolbar">
-								<input type="text" class="exclusion-search" id="search-excl-nrc" placeholder="Buscar NRC..." autocomplete="off" />
-								<button type="button" class="btn-secondary btn-sm" id="btn-excl-nrc-toggle">Desmarcar abiertos</button>
-								<span class="meta" id="excl-nrc-count"></span>
+						<div class="filters-bar" style="margin-top: 1rem;">
+							<div class="filter-group">
+								<label for="min-materias">Min. materias:</label>
+								<input type="number" id="min-materias" name="min_materias" value="3" min="1" />
 							</div>
-							<div class="exclusion-nested-list" id="exclusion-nrc-list"></div>
+							<div class="filter-group">
+								<label for="max-materias">Max. materias:</label>
+								<input type="number" id="max-materias" name="max_materias" min="1" />
+							</div>
+							<div class="filter-group">
+								<label for="limite-mostrar">Max. resultados:</label>
+								<input type="number" id="limite-mostrar" name="limite_mostrar" value="{{ limite_mostrar or 1000 }}" min="1" max="5000" />
+							</div>
 						</div>
+						<input type="hidden" id="excl-profes-json" name="excl_profes_json" value='{{ excluded_profes_json | safe }}' />
+						<input type="hidden" id="excl-nrcs-json" name="excl_nrcs_json" value='{{ excluded_nrcs_json | safe }}' />
+						<input type="hidden" id="forced-nrcs-json" name="forced_nrcs_json" value='{{ forced_nrcs_json | safe }}' />
+						<button type="submit">Generar horarios</button>
+					</form>
+				</div>
 
-						<div class="exclusion-panel" id="excl-force-panel">
-							<div class="exclusion-panel-toolbar">
-								<input type="text" class="exclusion-search" id="search-excl-force" placeholder="Buscar NRC..." autocomplete="off" />
-								<button type="button" class="btn-secondary btn-sm" id="btn-excl-force-toggle">Desmarcar abiertos</button>
-								<span class="meta" id="excl-force-count"></span>
+				<div id="mode-manual" style="display:none">
+					<div class="manual-builder">
+						<div class="manual-schedule-wrap">
+							<div class="manual-schedule-toolbar">
+								<h3>Mi horario</h3>
+								<div class="manual-schedule-info">
+									<span id="manual-info-text" class="meta">Selecciona materias a la derecha</span>
+									<button type="button" class="btn-secondary btn-sm" id="manual-clear-all">Limpiar todo</button>
+								</div>
 							</div>
-							<div class="exclusion-nested-list" id="exclusion-force-list"></div>
+							<div class="manual-schedule" id="manual-schedule"></div>
+						</div>
+						<div class="manual-panel">
+							<div class="manual-panel-header">
+								<h3>Materias disponibles</h3>
+								<input type="text" class="exclusion-search" id="manual-search" placeholder="Buscar materia..." autocomplete="off" />
+							</div>
+							<div class="manual-subjects" id="manual-subjects"></div>
+							<div class="manual-selected-list" id="manual-selected-list" style="display:none">
+								<h4>Seleccionadas</h4>
+								<div id="manual-selected-items"></div>
+							</div>
 						</div>
 					</div>
 				</div>
-
-				<div class="filters-bar" style="margin-top: 1rem;">
-						<div class="filter-group">
-							<label for="min-materias">Min. materias:</label>
-							<input type="number" id="min-materias" name="min_materias" value="3" min="1" />
-						</div>
-						<div class="filter-group">
-							<label for="max-materias">Max. materias:</label>
-							<input type="number" id="max-materias" name="max_materias" min="1" />
-						</div>
-						<div class="filter-group">
-							<label for="limite-mostrar">Max. resultados:</label>
-							<input type="number" id="limite-mostrar" name="limite_mostrar" value="{{ limite_mostrar or 1000 }}" min="1" max="5000" />
-						</div>
-				</div>
-					<input type="hidden" id="excl-profes-json" name="excl_profes_json" value='{{ excluded_profes_json | safe }}' />
-					<input type="hidden" id="excl-nrcs-json" name="excl_nrcs_json" value='{{ excluded_nrcs_json | safe }}' />
-					<input type="hidden" id="forced-nrcs-json" name="forced_nrcs_json" value='{{ forced_nrcs_json | safe }}' />
-					<button type="submit">Generar horarios</button>
-				</form>
 			</section>
 			{% endif %}
 
@@ -280,7 +314,289 @@
 
 		<script>
 		(() => {
-			const FILTROS_DATA = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
+			const FILTROS = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
+			const DAYS = ["L","M","X","J","V","S","D"];
+			const DAY_NAMES = {L:"Lunes",M:"Martes",X:"Miercoles",J:"Jueves",V:"Viernes",S:"Sabado",D:"Domingo"};
+			const COLORS = ["#0ea5e9","#8b5cf6","#f97316","#10b981","#e11d48","#6366f1","#14b8a6","#f59e0b","#ec4899","#84cc16","#06b6d4","#a855f7","#ef4444","#22c55e","#3b82f6","#d946ef"];
+
+			let selections = {};
+			let colorMap = {};
+			let colorIdx = 0;
+
+			function getColor(materia) {
+				if (!colorMap[materia]) {
+					colorMap[materia] = COLORS[colorIdx % COLORS.length];
+					colorIdx++;
+				}
+				return colorMap[materia];
+			}
+
+			function timeToMin(t) {
+				if (!t) return 0;
+				var p = t.split(":");
+				return parseInt(p[0]) * 60 + parseInt(p[1] || 0);
+			}
+
+			function minToTime(m) {
+				var h = Math.floor(m / 60);
+				var mn = m % 60;
+				return (h < 10 ? "0" : "") + h + ":" + (mn < 10 ? "0" : "") + mn;
+			}
+
+			function expandedSchedule(blocks) {
+				var result = [];
+				for (var i = 0; i < blocks.length; i++) {
+					var b = blocks[i];
+					var dia = b.dia;
+					if (dia === "A") { result.push({dia:"X",inicio:b.inicio,fin:b.fin,parte:1}); }
+					else if (dia === "B") { result.push({dia:"X",inicio:b.inicio,fin:b.fin,parte:2}); }
+					else if (dia === "Y") { result.push({dia:"J",inicio:b.inicio,fin:b.fin,parte:1}); }
+					else if (dia === "Z") { result.push({dia:"J",inicio:b.inicio,fin:b.fin,parte:2}); }
+					else { result.push({dia:dia, inicio:b.inicio, fin:b.fin, parte:0}); }
+				}
+				return result;
+			}
+
+			function hasConflict(blocks1, blocks2) {
+				var exp1 = expandedSchedule(blocks1);
+				var exp2 = expandedSchedule(blocks2);
+				for (var i = 0; i < exp1.length; i++) {
+					for (var j = 0; j < exp2.length; j++) {
+						var a = exp1[i], b = exp2[j];
+						if (a.dia === b.dia && a.inicio < b.fin && b.inicio < a.fin) return true;
+					}
+				}
+				return false;
+			}
+
+			function getConflictMaterias(materia, option) {
+				var conflicts = [];
+				for (var m in selections) {
+					if (m === materia) continue;
+					if (hasConflict(option.horarios, selections[m].horarios)) conflicts.push(m);
+				}
+				return conflicts;
+			}
+
+			function hasAnyConflict(blocks) {
+				for (var m in selections) {
+					if (hasConflict(blocks, selections[m].horarios)) return true;
+				}
+				return false;
+			}
+
+			function getAllBlocks() {
+				var blocks = [];
+				for (var m in selections) {
+					for (var i = 0; i < selections[m].horarios.length; i++) {
+						blocks.push(selections[m].horarios[i]);
+					}
+				}
+				return blocks;
+			}
+
+			function renderSchedule() {
+				var allBlocks = getAllBlocks();
+				var timeSet = {};
+				for (var i = 0; i < allBlocks.length; i++) {
+					timeSet[allBlocks[i].inicio] = true;
+					timeSet[allBlocks[i].fin] = true;
+				}
+				var times = Object.keys(timeSet).sort();
+				if (times.length < 2) times = ["08:00","21:00"];
+
+				var grid = {};
+				for (var i = 0; i < allBlocks.length; i++) {
+					var b = allBlocks[i];
+					if (!grid[b.dia]) grid[b.dia] = [];
+					grid[b.dia].push(b);
+				}
+
+				var html = '<table><thead><tr><th class="slot-header">Horario</th>';
+				for (var d = 0; d < DAYS.length; d++) {
+					html += '<th>' + DAY_NAMES[DAYS[d]] + '</th>';
+				}
+				html += '</tr></thead><tbody>';
+
+				for (var t = 0; t < times.length - 1; t++) {
+					var ini = times[t], fin = times[t + 1];
+					var iniM = timeToMin(ini), finM = timeToMin(fin);
+					if (finM - iniM < 5) continue;
+
+					html += '<tr><td class="slot-cell">' + ini + '</td>';
+					for (var d = 0; d < DAYS.length; d++) {
+						html += '<td>';
+						var dia = DAYS[d];
+						if (grid[dia]) {
+							for (var j = 0; j < grid[dia].length; j++) {
+								var ev = grid[dia][j];
+								var evIni = timeToMin(ev.inicio), evFin = timeToMin(ev.fin);
+								if (evIni < finM && evFin > iniM) {
+									var color = getColor(ev.materia);
+									html += '<div class="manual-event" style="border-left-color:' + color + ';background:' + color + '11" title="' + ev.materia + ' - NRC ' + ev.nrc + ' - ' + ev.profesor + '">';
+									html += '<strong style="color:' + color + '">' + ev.materia + '</strong>';
+									html += '<span class="ev-detail">NRC ' + ev.nrc + '</span><br/>';
+									html += '<span class="ev-detail">' + ev.profesor + '</span>';
+									if (ev.salon) html += '<br/><span class="ev-detail">' + ev.salon + '</span>';
+									html += '</div>';
+								}
+							}
+						}
+						html += '</td>';
+					}
+					html += '</tr>';
+				}
+				html += '</tbody></table>';
+				document.getElementById("manual-schedule").innerHTML = html;
+			}
+
+			function renderSubjects(filter) {
+				var container = document.getElementById("manual-subjects");
+				if (!container) return;
+				var q = (filter || "").toLowerCase();
+				var html = "";
+				var keys = Object.keys(FILTROS).sort();
+
+				for (var k = 0; k < keys.length; k++) {
+					var materia = keys[k];
+					if (q && materia.toLowerCase().indexOf(q) === -1) continue;
+					var options = FILTROS[materia];
+					var isOpen = selections[materia] ? true : false;
+
+					html += '<div class="manual-subj-card' + (isOpen ? " open" : "") + '" data-materia="' + materia + '">';
+					html += '<div class="manual-subj-header" onclick="window._manualToggleMateria(this)">';
+					html += '<span class="manual-subj-chevron">' + (isOpen ? "&#9660;" : "&#9654;") + '</span>';
+					html += '<span class="manual-subj-name">' + materia + '</span>';
+					html += '<span class="manual-subj-count">' + options.length + ' NRC</span>';
+					html += '</div>';
+					html += '<div class="manual-subj-options">';
+
+					for (var j = 0; j < options.length; j++) {
+						var op = options[j];
+						var isSelected = selections[materia] && selections[materia].nrc === op.nrc;
+						var conflicts = isSelected ? [] : getConflictMaterias(materia, op);
+
+						html += '<div class="manual-nrc-option' + (isSelected ? " selected" : "") + (conflicts.length > 0 && !isSelected ? " has-conflict" : "") + '" data-materia="' + materia + '" data-nrc="' + op.nrc + '" onclick="window._manualSelectOption(this)">';
+						html += '<input type="radio" name="manual-nrc-' + materia.replace(/[^a-zA-Z0-9]/g, "_") + '" class="manual-nrc-radio"' + (isSelected ? " checked" : "") + ' />';
+						html += '<div class="manual-nrc-info">';
+						html += '<div class="manual-nrc-nrc">NRC ' + op.nrc + '</div>';
+						html += '<div class="manual-nrc-prof">' + op.profesor + '</div>';
+
+						var sched = [];
+						for (var h = 0; h < op.horarios.length; h++) {
+							var bl = op.horarios[h];
+							sched.push(DAY_NAMES[bl.dia] + " " + bl.inicio + "-" + bl.fin);
+						}
+						html += '<div class="manual-nrc-schedule">' + sched.join(" &middot; ") + '</div>';
+
+						if (conflicts.length > 0 && !isSelected) {
+							html += '<div class="manual-nrc-schedule" style="color:var(--error)">Choque con: ' + conflicts.join(", ") + '</div>';
+						}
+						html += '</div></div>';
+					}
+					html += '</div></div>';
+				}
+				container.innerHTML = html;
+			}
+
+			function renderSelectedList() {
+				var listEl = document.getElementById("manual-selected-list");
+				var itemsEl = document.getElementById("manual-selected-items");
+				var infoEl = document.getElementById("manual-info-text");
+				var keys = Object.keys(selections);
+
+				if (keys.length === 0) {
+					if (listEl) listEl.style.display = "none";
+					if (infoEl) infoEl.textContent = "Selecciona materias a la derecha";
+					return;
+				}
+
+				var totalH = 0;
+				if (listEl) listEl.style.display = "";
+				var html = "";
+				for (var i = 0; i < keys.length; i++) {
+					var m = keys[i], op = selections[m];
+					html += '<div class="manual-sel-item">';
+					html += '<span class="materia-badge" data-materia="' + m + '" style="background:' + getColor(m) + ';color:#fff;font-size:0.75rem;padding:2px 8px;border-radius:4px">' + m + '</span>';
+					html += '<span style="font-size:0.78rem;color:var(--text-secondary)">NRC ' + op.nrc + ' &middot; ' + op.profesor + '</span>';
+					html += '<button type="button" class="manual-sel-remove" onclick="window._manualRemove(\'' + m.replace(/'/g, "\\'") + '\')" title="Quitar">&times;</button>';
+					html += '</div>';
+				}
+				if (itemsEl) itemsEl.innerHTML = html;
+				if (infoEl) infoEl.textContent = keys.length + " materia(s) seleccionada(s)";
+			}
+
+			window._manualToggleMateria = function(header) {
+				var card = header.closest(".manual-subj-card");
+				if (card) card.classList.toggle("open");
+			};
+
+			window._manualSelectOption = function(el) {
+				var materia = el.dataset.materia;
+				var nrc = el.dataset.nrc;
+				var option = FILTROS[materia].find(function(o) { return o.nrc === nrc; });
+				if (!option) return;
+
+				if (selections[materia] && selections[materia].nrc === nrc) {
+					delete selections[materia];
+				} else {
+					selections[materia] = option;
+				}
+				renderSchedule();
+				renderSubjects(document.getElementById("manual-search")?.value || "");
+				renderSelectedList();
+			};
+
+			window._manualRemove = function(materia) {
+				delete selections[materia];
+				renderSchedule();
+				renderSubjects(document.getElementById("manual-search")?.value || "");
+				renderSelectedList();
+			};
+
+			// Mode toggle
+			var modeBtns = document.querySelectorAll(".mode-btn");
+			for (var i = 0; i < modeBtns.length; i++) {
+				modeBtns[i].addEventListener("click", function() {
+					for (var j = 0; j < modeBtns.length; j++) modeBtns[j].classList.remove("active");
+					this.classList.add("active");
+					var mode = this.dataset.mode;
+					document.getElementById("mode-auto").style.display = mode === "auto" ? "" : "none";
+					document.getElementById("mode-manual").style.display = mode === "manual" ? "" : "none";
+					if (mode === "manual") {
+						renderSchedule();
+						renderSubjects(document.getElementById("manual-search")?.value || "");
+						renderSelectedList();
+					}
+				});
+			}
+
+			// Manual search
+			var manualSearch = document.getElementById("manual-search");
+			if (manualSearch) {
+				manualSearch.addEventListener("input", function() {
+					renderSubjects(this.value);
+				});
+			}
+
+			// Clear all
+			var clearBtn = document.getElementById("manual-clear-all");
+			if (clearBtn) {
+				clearBtn.addEventListener("click", function() {
+					selections = {};
+					colorMap = {};
+					colorIdx = 0;
+					renderSchedule();
+					renderSubjects(document.getElementById("manual-search")?.value || "");
+					renderSelectedList();
+				});
+			}
+		})();
+		</script>
+
+		<script>
+		(() => {
+			const FILTROS = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
 			const hiddenProfes = document.getElementById("excl-profes-json");
 			const hiddenNrcs = document.getElementById("excl-nrcs-json");
 			const hiddenForced = document.getElementById("forced-nrcs-json");
@@ -309,7 +625,7 @@
 				container.innerHTML = "";
 
 				for (const materia of selected) {
-					const items = FILTROS_DATA[materia]?.[dataKey] || [];
+					const items = FILTROS[materia]?.[dataKey] || [];
 					if (items.length === 0) continue;
 
 					const group = document.createElement("div");
@@ -498,7 +814,7 @@
 			if (btnAll) btnAll.addEventListener("click", function() { setTimeout(rebuildAll, 10); });
 			if (btnNone) btnNone.addEventListener("click", function() { setTimeout(rebuildAll, 10); });
 
-			if (Object.keys(FILTROS_DATA).length > 0) {
+			if (Object.keys(FILTROS).length > 0) {
 				rebuildAll();
 			}
 		})();
