@@ -65,8 +65,42 @@
 							</span>
 						</label>
 						{% endfor %}
+				</div>
+
+				<div class="exclusion-filters" id="exclusion-filters">
+					<button type="button" class="exclusion-toggle" id="exclusion-toggle">
+						<span class="exclusion-icon">&#9660;</span>
+						Filtros de exclusi&oacute;n (ahorrar procesamiento)
+					</button>
+					<div class="exclusion-body" id="exclusion-body">
+						<p class="meta" style="margin-bottom: 12px;">
+							Excluye profesores o NRCs que ya no tengan disponibilidad. El servidor no generar&aacute; combinaciones con estos elementos, ahorrando tiempo de procesamiento.
+						</p>
+
+						<div class="exclusion-tabs">
+							<button type="button" class="exclusion-tab active" data-panel="excl-prof-panel">Profesores</button>
+							<button type="button" class="exclusion-tab" data-panel="excl-nrc-panel">NRCs (Clave de grupo)</button>
+						</div>
+
+						<div class="exclusion-panel active" id="excl-prof-panel">
+							<div class="exclusion-panel-toolbar">
+								<button type="button" class="btn-secondary btn-sm" id="btn-excl-prof-toggle">Toggle seleccionadas</button>
+								<span class="meta" id="excl-prof-count"></span>
+							</div>
+							<div class="exclusion-nested-list" id="exclusion-prof-list"></div>
+						</div>
+
+						<div class="exclusion-panel" id="excl-nrc-panel">
+							<div class="exclusion-panel-toolbar">
+								<button type="button" class="btn-secondary btn-sm" id="btn-excl-nrc-toggle">Toggle seleccionadas</button>
+								<span class="meta" id="excl-nrc-count"></span>
+							</div>
+							<div class="exclusion-nested-list" id="exclusion-nrc-list"></div>
+						</div>
 					</div>
-					<div class="filters-bar" style="margin-top: 1rem;">
+				</div>
+
+				<div class="filters-bar" style="margin-top: 1rem;">
 						<div class="filter-group">
 							<label for="min-materias">Min. materias:</label>
 							<input type="number" id="min-materias" name="min_materias" value="3" min="1" />
@@ -79,7 +113,9 @@
 							<label for="limite-mostrar">Max. resultados:</label>
 							<input type="number" id="limite-mostrar" name="limite_mostrar" value="{{ limite_mostrar or 1000 }}" min="1" max="5000" />
 						</div>
-					</div>
+				</div>
+					<input type="hidden" id="excl-profes-json" name="excl_profes_json" value='{{ excluded_profes_json | safe }}' />
+					<input type="hidden" id="excl-nrcs-json" name="excl_nrcs_json" value='{{ excluded_nrcs_json | safe }}' />
 					<button type="submit">Generar horarios</button>
 				</form>
 			</section>
@@ -197,6 +233,7 @@
 		{% endif %}
 
 		<script id="resultados-data" type="application/json">{{ resultados_json | safe }}</script>
+		<script id="filtros-data" type="application/json">{{ filtros_json | safe }}</script>
 
 		<script>
 		async function loadRecentDocuments() {
@@ -225,6 +262,191 @@
 			} catch (e) {}
 		}
 		document.addEventListener("DOMContentLoaded", loadRecentDocuments);
+		</script>
+
+		<script>
+		(() => {
+			const FILTROS_DATA = JSON.parse(document.getElementById("filtros-data")?.textContent || "{}");
+			const hiddenProfes = document.getElementById("excl-profes-json");
+			const hiddenNrcs = document.getElementById("excl-nrcs-json");
+
+			let exclProfes = {};
+			let exclNrcs = {};
+			try { exclProfes = JSON.parse(hiddenProfes?.value) || {}; } catch(e) {}
+			try { exclNrcs = JSON.parse(hiddenNrcs?.value) || {}; } catch(e) {}
+
+			function syncHiddenInputs() {
+				if (hiddenProfes) hiddenProfes.value = JSON.stringify(exclProfes);
+				if (hiddenNrcs) hiddenNrcs.value = JSON.stringify(exclNrcs);
+			}
+
+			function getSelectedSubjects() {
+				return Array.from(document.querySelectorAll('input[name="materias"]:checked')).map(cb => cb.value);
+			}
+
+			function buildNestedList(containerId, dataKey, hiddenStore) {
+				const container = document.getElementById(containerId);
+				if (!container) return;
+				const selected = getSelectedSubjects();
+				container.innerHTML = "";
+
+				for (const materia of selected) {
+					const items = FILTROS_DATA[materia]?.[dataKey] || [];
+					if (items.length === 0) continue;
+
+					const group = document.createElement("div");
+					group.className = "exclusion-group";
+					group.dataset.materia = materia;
+
+					const header = document.createElement("div");
+					header.className = "exclusion-group-header";
+
+					const toggleBtn = document.createElement("button");
+					toggleBtn.type = "button";
+					toggleBtn.className = "exclusion-group-toggle";
+					toggleBtn.innerHTML = `<span class="exclusion-chevron">&#9654;</span> ${materia} <span class="meta">(${items.length})</span>`;
+					toggleBtn.addEventListener("click", () => {
+						const isOpen = group.classList.toggle("open");
+						toggleBtn.querySelector(".exclusion-chevron").innerHTML = isOpen ? "&#9660;" : "&#9654;";
+					});
+
+					const selectAllCb = document.createElement("input");
+					selectAllCb.type = "checkbox";
+					selectAllCb.className = "exclusion-select-all";
+					selectAllCb.title = "Excluir todos de esta materia";
+					const savedExcl = hiddenStore[materia] || [];
+					const allExcluded = items.every(it => savedExcl.includes(it));
+					const someExcluded = items.some(it => savedExcl.includes(it));
+					selectAllCb.checked = allExcluded;
+					selectAllCb.indeterminate = someExcluded && !allExcluded;
+					selectAllCb.addEventListener("change", () => {
+						const checkboxes = group.querySelectorAll(".exclusion-item-cb");
+						checkboxes.forEach(cb => { cb.checked = selectAllCb.checked; });
+						if (selectAllCb.checked) {
+							hiddenStore[materia] = [...items];
+						} else {
+							delete hiddenStore[materia];
+						}
+						syncHiddenInputs();
+						updateCounts();
+					});
+
+					header.appendChild(toggleBtn);
+					header.appendChild(selectAllCb);
+					group.appendChild(header);
+
+					const list = document.createElement("div");
+					list.className = "exclusion-group-items";
+
+					for (const item of items) {
+						const label = document.createElement("label");
+						label.className = "exclusion-item";
+						const cb = document.createElement("input");
+						cb.type = "checkbox";
+						cb.className = "exclusion-item-cb";
+						cb.value = item;
+						cb.checked = savedExcl.includes(item);
+						cb.addEventListener("change", () => {
+							if (!hiddenStore[materia]) hiddenStore[materia] = [];
+							if (cb.checked) {
+								if (!hiddenStore[materia].includes(item)) hiddenStore[materia].push(item);
+							} else {
+								hiddenStore[materia] = hiddenStore[materia].filter(v => v !== item);
+								if (hiddenStore[materia].length === 0) delete hiddenStore[materia];
+							}
+							const groupCbs = group.querySelectorAll(".exclusion-item-cb");
+							const allChecked = Array.from(groupCbs).every(c => c.checked);
+							const someChecked = Array.from(groupCbs).some(c => c.checked);
+							selectAllCb.checked = allChecked;
+							selectAllCb.indeterminate = someChecked && !allChecked;
+							syncHiddenInputs();
+							updateCounts();
+						});
+						label.appendChild(cb);
+						label.appendChild(document.createTextNode(" " + item));
+						list.appendChild(label);
+					}
+
+					group.appendChild(list);
+					container.appendChild(group);
+				}
+			}
+
+			function updateCounts() {
+				let totalProf = 0, totalNrc = 0;
+				for (const m in exclProfes) totalProf += exclProfes[m].length;
+				for (const m in exclNrcs) totalNrc += exclNrcs[m].length;
+				const pc = document.getElementById("excl-prof-count");
+				const nc = document.getElementById("excl-nrc-count");
+				if (pc) pc.textContent = totalProf > 0 ? `${totalProf} excluidos` : "";
+				if (nc) nc.textContent = totalNrc > 0 ? `${totalNrc} excluidos` : "";
+			}
+
+			function rebuildAll() {
+				buildNestedList("exclusion-prof-list", "profesores", exclProfes);
+				buildNestedList("exclusion-nrc-list", "nrcs", exclNrcs);
+				updateCounts();
+			}
+
+			// Toggle exclusion section
+			const toggleBtn = document.getElementById("exclusion-toggle");
+			const exclBody = document.getElementById("exclusion-body");
+			if (toggleBtn && exclBody) {
+				toggleBtn.addEventListener("click", () => {
+					const isOpen = exclBody.classList.toggle("open");
+					toggleBtn.querySelector(".exclusion-icon").innerHTML = isOpen ? "&#9650;" : "&#9660;";
+				});
+			}
+
+			// Tab switching
+			document.querySelectorAll(".exclusion-tab").forEach(tab => {
+				tab.addEventListener("click", () => {
+					document.querySelectorAll(".exclusion-tab").forEach(t => t.classList.remove("active"));
+					document.querySelectorAll(".exclusion-panel").forEach(p => p.classList.remove("active"));
+					tab.classList.add("active");
+					const panel = document.getElementById(tab.dataset.panel);
+					if (panel) panel.classList.add("active");
+				});
+			});
+
+			// Toggle selected for profes
+			const btnExclProfToggle = document.getElementById("btn-excl-prof-toggle");
+			if (btnExclProfToggle) {
+				btnExclProfToggle.addEventListener("click", () => {
+					document.querySelectorAll("#exclusion-prof-list .exclusion-group.open .exclusion-item-cb").forEach(cb => {
+						if (cb.checked) {
+							cb.checked = false;
+							cb.dispatchEvent(new Event("change"));
+						}
+					});
+				});
+			}
+
+			// Toggle selected for NRCs
+			const btnExclNrcToggle = document.getElementById("btn-excl-nrc-toggle");
+			if (btnExclNrcToggle) {
+				btnExclNrcToggle.addEventListener("click", () => {
+					document.querySelectorAll("#exclusion-nrc-list .exclusion-group.open .exclusion-item-cb").forEach(cb => {
+						if (cb.checked) {
+							cb.checked = false;
+							cb.dispatchEvent(new Event("change"));
+						}
+					});
+				});
+			}
+
+			// Rebuild when subject selection changes
+			document.querySelectorAll('input[name="materias"]').forEach(cb => {
+				cb.addEventListener("change", rebuildAll);
+			});
+			document.getElementById("btn-select-all")?.addEventListener("click", () => setTimeout(rebuildAll, 10));
+			document.getElementById("btn-deselect-all")?.addEventListener("click", () => setTimeout(rebuildAll, 10));
+
+			// Initial build
+			if (Object.keys(FILTROS_DATA).length > 0) {
+				rebuildAll();
+			}
+		})();
 		</script>
 
 		<script>

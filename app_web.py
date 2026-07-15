@@ -393,6 +393,39 @@ def generar_horarios(materias_seleccionadas, min_materias=3, max_materias=None):
     return resultados, truncado, uso_subconjuntos, max_materias_logradas
 
 
+def aplicar_filtros_previos(materias, excluded_profes=None, excluded_nrcs=None):
+    """Filtra opciones de materias antes de generar combinaciones.
+
+    excluded_profes / excluded_nrcs:
+        dict con clave = nombre de materia (o "_global" para todas),
+        valor = lista de nombres de profesores / NRCs a excluir.
+    """
+    excluded_profes = excluded_profes or {}
+    excluded_nrcs = excluded_nrcs or {}
+
+    resultado = {}
+    for materia, opciones in materias.items():
+        filtradas = []
+        for opcion in opciones:
+            profesor = opcion.get("profesor", "")
+            nrc = opcion.get("nrc", "")
+
+            excluded_p = excluded_profes.get(materia, []) or excluded_profes.get("_global", [])
+            excluded_n = excluded_nrcs.get(materia, []) or excluded_nrcs.get("_global", [])
+
+            if profesor in excluded_p:
+                continue
+            if nrc in excluded_n:
+                continue
+
+            filtradas.append(opcion)
+
+        if filtradas:
+            resultado[materia] = filtradas
+
+    return resultado
+
+
 def json_safe(obj):
     if isinstance(obj, time):
         return obj.strftime("%H:%M")
@@ -431,6 +464,15 @@ def _get_result_by_id(state, result_id):
 def index():
     state = _get_state() or {}
     resultados = state.get("resultados", [])
+
+    # Construir datos para filtros anidados: {materia: {profesores: [...], nrcs: [...]}}
+    materias_raw = state.get("materias", {})
+    filtros_data = {}
+    for materia, opciones in materias_raw.items():
+        profesores = sorted(set(op.get("profesor", "") for op in opciones if op.get("profesor")))
+        nrcs = sorted(set(op.get("nrc", "") for op in opciones if op.get("nrc")))
+        filtros_data[materia] = {"profesores": profesores, "nrcs": nrcs}
+
     return render_template(
         "index.html",
         materias_disponibles=state.get("materias_disponibles", []),
@@ -444,6 +486,9 @@ def index():
         pdf_name=state.get("pdf_name"),
         seleccionadas=state.get("seleccionadas", []),
         limite_mostrar=state.get("limite_mostrar", DEFAULT_LIMITE_MOSTRAR),
+        filtros_json=json.dumps(filtros_data, ensure_ascii=False),
+        excluded_profes_json=json.dumps(state.get("excluded_profes", {}), ensure_ascii=False),
+        excluded_nrcs_json=json.dumps(state.get("excluded_nrcs", {}), ensure_ascii=False),
     )
 
 
@@ -628,6 +673,45 @@ def generate():
         flash("No se encontraron materias seleccionadas validas.", "error")
         return redirect(url_for("index"))
 
+    # --- Filtros de exclusión anidados ---
+    excluded_profes = {}
+    excluded_nrcs = {}
+
+    excl_profes_json = request.form.get("excl_profes_json", "")
+    if excl_profes_json:
+        try:
+            raw = json.loads(excl_profes_json)
+            for materia, items in raw.items():
+                excluded_profes[materia] = [p for p in items if p]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    excl_nrcs_json = request.form.get("excl_nrcs_json", "")
+    if excl_nrcs_json:
+        try:
+            raw = json.loads(excl_nrcs_json)
+            for materia, items in raw.items():
+                excluded_nrcs[materia] = [n for n in items if n]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if excluded_profes or excluded_nrcs:
+        antes = sum(len(v) for v in materias_filtradas.values())
+        materias_filtradas = aplicar_filtros_previos(
+            materias_filtradas, excluded_profes, excluded_nrcs
+        )
+        despues = sum(len(v) for v in materias_filtradas.values())
+        if antes != despues:
+            flash(
+                f"Filtros aplicados: {antes - despues} opciones eliminadas "
+                f"({antes} → {despues} opciones restantes).",
+                "success",
+            )
+
+    if not materias_filtradas:
+        flash("Los filtros de exclusión eliminaron todas las opciones disponibles.", "error")
+        return redirect(url_for("index"))
+
     min_materias = int(request.form.get("min_materias", 3))
     max_materias = int(request.form.get("max_materias", len(seleccionadas)))
     limite_mostrar = int(request.form.get("limite_mostrar", DEFAULT_LIMITE_MOSTRAR))
@@ -651,6 +735,8 @@ def generate():
     state["limite_mostrar"] = limite_mostrar
     state["min_materias"] = min_materias
     state["max_materias"] = max_materias
+    state["excluded_profes"] = excluded_profes
+    state["excluded_nrcs"] = excluded_nrcs
     _save_state(state)
 
     if not resultados:
